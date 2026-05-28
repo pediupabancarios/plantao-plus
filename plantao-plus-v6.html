@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Plantão+"/>
+<meta name="theme-color" content="#0d2870"/>
+<title>Plantão+ v6.0 · Pediatria UPA JP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+body{font-family:'Nunito',sans-serif;background:#0d2870;transition:background .3s;}
+body.dark{background:#070d1a;}
+#root{height:100dvh;display:flex;flex-direction:column;max-width:430px;margin:0 auto;overflow:hidden;}
+::-webkit-scrollbar{display:none;}
+select option{color:#0f172a;}
+input::placeholder,textarea::placeholder{color:#94a3b8;}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse2{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-14px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px rgba(37,99,255,.3)}50%{box-shadow:0 0 22px rgba(37,99,255,.65)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@keyframes barGrow{from{width:0}to{width:var(--w)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+window.storage={
+  async get(k,s){try{const v=localStorage.getItem((s?'sh_':'lo_')+k);return v?{key:k,value:v,shared:!!s}:null;}catch{return null;}},
+  async set(k,v,s){try{localStorage.setItem((s?'sh_':'lo_')+k,v);return{key:k,value:v,shared:!!s};}catch{return null;}},
+  async delete(k,s){try{localStorage.removeItem((s?'sh_':'lo_')+k);return{key:k,deleted:true};}catch{return null;}},
+  async list(p,s){try{const pre=(s?'sh_':'lo_')+(p||'');const keys=Object.keys(localStorage).filter(k=>k.startsWith(pre)).map(k=>k.replace(s?'sh_':'lo_',''));return{keys};}catch{return{keys:[]};}}
+};
+</script>
+<script type="text/babel" data-presets="react">
+const{useState,useEffect,useCallback,useRef,useMemo,useReducer}=React;
+/* ═══════════════════════════════════════════════════════
+   PLANTÃO+ v6.0 — Ultimate Edition
+   Pediatria · UPA João Pessoa · 2026
+   Regra salarial: 1-6 = R$825 | 7+ = R$1.185
+═══════════════════════════════════════════════════════ */
+
+// ── SALARY ──────────────────────────────────────────────
+const SALARY_BASE=825,SALARY_PLUS=1185,SALARY_THRESHOLD=6;
+const calcVal=n=>n<=SALARY_THRESHOLD?SALARY_BASE:SALARY_PLUS;
+function calcSalary(uid,shifts){
+  const all=Object.entries(shifts).flatMap(([d,ss])=>ss.map(s=>({...s,day:parseInt(d)})));
+  const mine=all.filter(s=>s.plantonistas.includes(uid)&&(s.status==="concluido"||s.status==="fechado_gestor")).sort((a,b)=>a.day-b.day);
+  let total=0;
+  const items=mine.map((s,i)=>{const n=i+1,v=calcVal(n);total+=v;return{...s,num:n,valor:v};});
+  return{items,total,count:mine.length,next:calcVal(mine.length+1),nextNum:mine.length+1};
+}
+
+// ── THEME ────────────────────────────────────────────────
+const TH={
+  L:{bg:"#f0f4ff",card:"#fff",nav:"#fff",navBorder:"#e8ecf2",h1:"#0f172a",h2:"#1e293b",body:"#475569",muted:"#94a3b8",border:"#e2e8f0",inp:"#f8fafc",inpB:"#e2e8f0",accent:"#2563ff",aD:"#1d4ed8",aBg:"#eff6ff",green:"#16a34a",greenBg:"#dcfce7",purple:"#7c3aed",purpleBg:"#ede9fe",red:"#dc2626",redBg:"#fee2e2",orange:"#d97706",orangeBg:"#fef3c7",teal:"#0891b2",tealBg:"#e0f2fe",gold:"#b45309",goldBg:"#fef9c3",pink:"#db2777",pinkBg:"#fce7f3",gradH:"linear-gradient(140deg,#0d2870 0%,#061240 100%)",sh:"0 2px 12px rgba(0,0,0,.06)",sh2:"0 6px 28px rgba(0,0,0,.12)"},
+  D:{bg:"#070d1a",card:"#0f172a",nav:"#0f172a",navBorder:"#1e293b",h1:"#f1f5f9",h2:"#e2e8f0",body:"#94a3b8",muted:"#475569",border:"#1e293b",inp:"#1e293b",inpB:"#334155",accent:"#3b82f6",aD:"#2563ff",aBg:"rgba(59,130,246,.12)",green:"#22c55e",greenBg:"rgba(34,197,94,.12)",purple:"#a78bfa",purpleBg:"rgba(167,139,250,.12)",red:"#f87171",redBg:"rgba(248,113,113,.12)",orange:"#fb923c",orangeBg:"rgba(251,146,60,.12)",teal:"#22d3ee",tealBg:"rgba(34,211,238,.12)",gold:"#fbbf24",goldBg:"rgba(251,191,36,.12)",pink:"#f472b6",pinkBg:"rgba(244,114,182,.12)",gradH:"linear-gradient(140deg,#0d1f4a 0%,#050a1a 100%)",sh:"0 2px 12px rgba(0,0,0,.4)",sh2:"0 6px 28px rgba(0,0,0,.5)"}
+};
+let _dk=false;const G=()=>_dk?TH.D:TH.L;
+
+// ── CONSTS ───────────────────────────────────────────────
+const WEEK=["DOM","SEG","TER","QUA","QUI","SEX","SÁB"];
+const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const DNAMES=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+const DS=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+const HOSP={lat:-7.1195,lng:-34.8450,nome:"UPA Pediátrica JP"};
+const RAIO=50;
+const fmtR=v=>`R$\u00a0${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const nowHM=()=>{const d=new Date();return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;};
+const nowFull=()=>new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+
+// ── GEO ──────────────────────────────────────────────────
+function distM(la1,lo1,la2,lo2){const R=6371000,r=x=>x*Math.PI/180;const a=Math.sin(r(la2-la1)/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(r(lo2-lo1)/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+function useGeo(){
+  const[g,sG]=useState({status:"idle",dist:null,ts:null});
+  const check=useCallback(()=>{
+    if(!navigator.geolocation){sG(x=>({...x,status:"erro"}));return;}
+    sG(x=>({...x,status:"loading"}));
+    navigator.geolocation.getCurrentPosition(
+      p=>{const d=distM(p.coords.latitude,p.coords.longitude,HOSP.lat,HOSP.lng);sG({status:d<=RAIO?"dentro":"fora",dist:Math.round(d),acc:Math.round(p.coords.accuracy),ts:new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"})});},
+      e=>{sG({status:e.code===1?"negado":"erro",dist:null,ts:null});},
+      {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    );
+  },[]);
+  return{geo:g,check};
+}
+
+// ── USERS ─────────────────────────────────────────────────
+const USERS_DEFAULT=[
+  {id:0,role:"gestor",nome:"Dr. Rodrigo Cahuana Chipayo",crm:"11707/PB",email:"rodrigoyjuliana@gmail.com",login:"rodrigo.cahuana",senha:"rodrigo2026",esp:"Pediatria · Gestor",ini:"RC",color:"#2563ff",foto:null,ativo:true},
+  {id:1,role:"plantonista",nome:"Dra. Ana Paula Gomes Sales",crm:"19099/PB",email:"anapaula@upa.com.br",login:"anapaula.sales",senha:"gome1909",esp:"Pediatria",ini:"AP",color:"#16a34a",foto:null,ativo:true},
+  {id:2,role:"plantonista",nome:"Dra. Andreza Miranda Guzman",crm:"11401/PB",email:"andreza@upa.com.br",login:"andreza.miranda",senha:"mira1140",esp:"Pediatria",ini:"AM",color:"#7c3aed",foto:null,ativo:true},
+  {id:3,role:"plantonista",nome:"Dra. Arielle Vasco Viveiros",crm:"18439/PB",email:"arielle@upa.com.br",login:"arielle.vasco",senha:"vasc1843",esp:"Pediatria",ini:"AV",color:"#d97706",foto:null,ativo:true},
+  {id:4,role:"plantonista",nome:"Dr. Andre Barros Teixeira",crm:"17755/PB",email:"andre@upa.com.br",login:"andre.barros",senha:"barr1775",esp:"Pediatria",ini:"AB",color:"#0891b2",foto:null,ativo:true},
+  {id:5,role:"plantonista",nome:"Dr. Dieter Benaia Carvalho de Medeiros",crm:"34222/PB",email:"dieter@upa.com.br",login:"dieter.benaia",senha:"bena3422",esp:"Pediatria",ini:"DB",color:"#db2777",foto:null,ativo:true},
+  {id:6,role:"plantonista",nome:"Dra. Isabelle Gomes Azevedo",crm:"18857/PB",email:"isabelle@upa.com.br",login:"isabelle.gomes",senha:"gome1885",esp:"Pediatria",ini:"IG",color:"#059669",foto:null,ativo:true},
+  {id:7,role:"plantonista",nome:"Dra. Larissa de França Amaral Lins",crm:"14518/PB",email:"larissa@upa.com.br",login:"larissa.lins",senha:"fran1451",esp:"Pediatria",ini:"LL",color:"#9333ea",foto:null,ativo:true},
+  {id:8,role:"plantonista",nome:"Dra. Mariana Cristina Lima Coelho Satiro",crm:"19291/PB",email:"mariana@upa.com.br",login:"mariana.satiro",senha:"lima1929",esp:"Pediatria",ini:"MS",color:"#ea580c",foto:null,ativo:true},
+  {id:9,role:"plantonista",nome:"Dra. Maria Clara de Oliveira Gadelha",crm:"16104/PB",email:"mariaclara@upa.com.br",login:"mariaclara.gadelha",senha:"oliv1610",esp:"Pediatria",ini:"MC",color:"#0284c7",foto:null,ativo:true},
+  {id:10,role:"plantonista",nome:"Dra. Marina Gomes Carlos",crm:"19623/PB",email:"marina@upa.com.br",login:"marina.carlos",senha:"gome1962",esp:"Pediatria",ini:"MG",color:"#65a30d",foto:null,ativo:true},
+  {id:11,role:"plantonista",nome:"Dra. Maria Eduarda Regis Almeida Baia",crm:"18922/PB",email:"mariaeduarda@upa.com.br",login:"mariaeduarda.baia",senha:"regi1892",esp:"Pediatria",ini:"ME",color:"#7c3aed",foto:null,ativo:true},
+  {id:12,role:"plantonista",nome:"Dra. Raissa Delane Teberge Soares",crm:"13969/PB",email:"raissa@upa.com.br",login:"raissa.soares",senha:"tebe1396",esp:"Pediatria",ini:"RS",color:"#dc2626",foto:null,ativo:true},
+  {id:13,role:"plantonista",nome:"Dra. Raphaella Soares Galdino de Carvalho",crm:"10054/PB",email:"raphaella@upa.com.br",login:"raphaella.soares",senha:"soar1005",esp:"Pediatria",ini:"RG",color:"#0891b2",foto:null,ativo:true},
+  {id:14,role:"plantonista",nome:"Dra. Marilia Ribeiro de Morais Ramos",crm:"7465/PB",email:"marilia@upa.com.br",login:"marilia.ramos",senha:"ribe0746",esp:"Pediatria",ini:"MR",color:"#d97706",foto:null,ativo:true},
+  {id:15,role:"plantonista",nome:"Dr. Sueverten Mariano Mendonça",crm:"16538/PB",email:"sueverten@upa.com.br",login:"sueverten.mendonca",senha:"mari1653",esp:"Pediatria",ini:"SM",color:"#16a34a",foto:null,ativo:true},
+  {id:16,role:"plantonista",nome:"Dra. Thaynara Avila Garcia",crm:"14703/PB",email:"thaynara@upa.com.br",login:"thaynara.garcia",senha:"avil1470",esp:"Pediatria",ini:"TG",color:"#db2777",foto:null,ativo:true},
+  {id:17,role:"plantonista",nome:"Dra. Thaiza Cavalcante Lacerda",crm:"16538/PB",email:"thaiza@upa.com.br",login:"thaiza.lacerda",senha:"cava1653",esp:"Pediatria",ini:"TL",color:"#9333ea",foto:null,ativo:true},
+  {id:18,role:"plantonista",nome:"Dra. Wllyane Fernanda Barbosa de Pontes",crm:"16879/PB",email:"wllyane@upa.com.br",login:"wllyane.pontes",senha:"barb1687",esp:"Pediatria",ini:"WP",color:"#059669",foto:null,ativo:true},
+];
+
+// ── INITIAL SHIFTS ────────────────────────────────────────
+const SH_DEF={
+  22:[{id:201,plantonistas:[1,2],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"concluido",entradas:{1:"06:50",2:"06:55"},saidas:{1:"19:05",2:"19:02"},obs:"",pago:{}},
+      {id:202,plantonistas:[3,4],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"concluido",entradas:{3:"18:58",4:"19:01"},saidas:{3:"07:10",4:"07:00"},obs:"",pago:{}}],
+  23:[{id:203,plantonistas:[5,6],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"concluido",entradas:{5:"07:00",6:"06:52"},saidas:{5:"19:00",6:"19:03"},obs:"",pago:{}},
+      {id:204,plantonistas:[7,8],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"concluido",entradas:{7:"18:55",8:"19:00"},saidas:{7:"07:00",8:"07:05"},obs:"",pago:{}}],
+  24:[{id:111,plantonistas:[1,2],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"concluido",entradas:{1:"06:52",2:"06:58"},saidas:{1:"19:03",2:"19:00"},obs:"",pago:{}},
+      {id:112,plantonistas:[3,4],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"concluido",entradas:{3:"18:55",4:"19:02"},saidas:{3:"07:05",4:"07:00"},obs:"",pago:{}}],
+  25:[{id:205,plantonistas:[9,10],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"concluido",entradas:{9:"07:02",10:"06:58"},saidas:{9:"19:00",10:"19:05"},obs:"",pago:{}},
+      {id:206,plantonistas:[11,12],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"concluido",entradas:{11:"18:50",12:"19:00"},saidas:{11:"07:00",12:"07:08"},obs:"",pago:{}}],
+  26:[{id:101,plantonistas:[5,6],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"em_andamento",entradas:{5:"06:55",6:"06:58"},saidas:{},obs:"",pago:{}},
+      {id:102,plantonistas:[7,8],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}}],
+  27:[{id:103,plantonistas:[9,10],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}},
+      {id:104,plantonistas:[11,12],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}}],
+  28:[{id:105,plantonistas:[13,14],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}},
+      {id:106,plantonistas:[15,16],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}}],
+  29:[{id:107,plantonistas:[17,18],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}},
+      {id:108,plantonistas:[1,3],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}}],
+  30:[{id:109,plantonistas:[2,5],time:"07:00",timeEnd:"19:00",setor:"Pediatria UPA",tipo:"Diurno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}},
+      {id:110,plantonistas:[6,7],time:"19:00",timeEnd:"07:00",setor:"Pediatria UPA",tipo:"Noturno",status:"agendado",entradas:{},saidas:{},obs:"",pago:{}}],
+};
+const LOG_DEF=[];
+const SK={SH:"p6_sh",TR:"p6_tr",MSG:"p6_msg",US:"p6_us",LG:"p6_lg"};
+
+// ── STORAGE ───────────────────────────────────────────────
+async function sGet(k){try{const r=await window.storage.get(k,true);return r?JSON.parse(r.value):null;}catch{return null;}}
+async function sSet(k,v){try{await window.storage.set(k,JSON.stringify(v),true);}catch{}}
+function useShared(key,def,ms=3000){
+  const[val,sV]=useState(def);const[ok,sOk]=useState(false);const last=useRef("");
+  useEffect(()=>{(async()=>{const s=await sGet(key);if(s){sV(s);last.current=JSON.stringify(s);}else{await sSet(key,def);last.current=JSON.stringify(def);}sOk(true);})();},[]);
+  useEffect(()=>{if(!ok)return;const i=setInterval(async()=>{const s=await sGet(key);if(s){const str=JSON.stringify(s);if(str!==last.current){sV(s);last.current=str;}}},ms);return()=>clearInterval(i);},[ok,ms]);
+  const upd=useCallback(async(nv)=>{const r=typeof nv==="function"?nv(val):nv;sV(r);last.current=JSON.stringify(r);await sSet(key,r);},[key,val]);
+  return[val,upd,ok];
+}
+
+// ── NOTIFS ────────────────────────────────────────────────
+function useNotifs(uid,trocas,msgs){
+  const[ns,sNs]=useState([]);const seen=useRef(new Set());
+  useEffect(()=>{
+    if(uid===undefined||uid===null)return;
+    const news=[];
+    (trocas||[]).forEach(t=>{
+      const kR=`tr_${t.id}_p`,kA=`tr_${t.id}_a`,kRe=`tr_${t.id}_r`;
+      if(t.receptor===uid&&t.status==="pendente"&&!seen.current.has(kR)){news.push({id:kR,tipo:"troca",msg:`Solicitação de troca recebida`,time:t.criadaEm,color:"#7c3aed"});seen.current.add(kR);}
+      if(t.dono===uid&&t.status==="aceita"&&!seen.current.has(kA)){news.push({id:kA,tipo:"ok",msg:"Sua troca foi ✓ aceita",time:"",color:"#16a34a"});seen.current.add(kA);}
+      if(t.dono===uid&&t.status==="recusada"&&!seen.current.has(kRe)){news.push({id:kRe,tipo:"no",msg:"Sua troca foi recusada",time:"",color:"#dc2626"});seen.current.add(kRe);}
+    });
+    (msgs||[]).filter(m=>(m.para===uid||m.para==="todos")&&m.de!==uid&&!seen.current.has(`msg_${m.id}`)).forEach(m=>{
+      news.push({id:`msg_${m.id}`,tipo:"msg",msg:`Mensagem recebida`,time:m.hora,color:"#0891b2"});seen.current.add(`msg_${m.id}`);
+    });
+    if(news.length)sNs(p=>[...news,...p].slice(0,30));
+  },[trocas,msgs,uid]);
+  return{ns,dm:useCallback(id=>sNs(p=>p.filter(n=>n.id!==id)),[])};
+}
+
+// ── UI PRIMITIVES ─────────────────────────────────────────
+function Av({name="?",size=36,ini,color,foto}){
+  const i=ini||(()=>{const p=name.replace(/Dr\. |Dra\. /,"").split(" ");return(p[0]?.[0]||"")+(p[1]?.[0]||"");})();
+  const bg=color||"#2563ff";
+  if(foto)return<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",flexShrink:0,boxShadow:`0 2px 8px ${bg}44`}}><img src={foto} style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>;
+  return<div style={{width:size,height:size,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.36,fontWeight:800,color:"#fff",flexShrink:0,boxShadow:`0 2px 8px ${bg}44`}}>{i.toUpperCase()}</div>;
+}
+function Bdg({tipo,status}){
+  const Th=G();const b=(bg,c,t)=><span style={{fontSize:10,fontWeight:700,color:c,background:bg,padding:"3px 9px",borderRadius:20,whiteSpace:"nowrap"}}>{t}</span>;
+  if(status==="em_andamento")return b("#dbeafe","#1d4ed8","● Ao vivo");
+  if(status==="concluido")return b(Th.greenBg,Th.green,"✓ Concluído");
+  if(status==="fechado_gestor")return b(Th.orangeBg,Th.orange,"⚠ Fechado");
+  if(tipo==="Diurno")return b(Th.greenBg,Th.green,"☀ Diurno");
+  return b(Th.purpleBg,Th.purple,"🌙 Noturno");
+}
+function SyncDot({ok}){return(<div style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:6,height:6,borderRadius:"50%",background:ok?"#4ade80":"#fcd34d",boxShadow:ok?"0 0 6px #4ade80":"none",animation:ok?"pulse2 2s infinite":"spin 1s linear infinite"}}/><span style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.55)"}}>{ok?"Ao vivo":"…"}</span></div>);}
+function SBadge({num}){const Th=G();const v=calcVal(num),plus=num>6;return<div style={{display:"inline-flex",alignItems:"center",gap:3,background:plus?Th.goldBg:Th.greenBg,borderRadius:20,padding:"2px 9px",border:`1px solid ${plus?"#fcd34d":Th.green+"33"}`}}><span style={{fontSize:10,fontWeight:800,color:plus?Th.gold:Th.green}}>{fmtR(v)}</span><span style={{fontSize:8,color:plus?Th.orange:Th.green,fontWeight:600}}>#{num}</span></div>;}
+function Countdown({day,time,tipo}){
+  const Th=G();const[l,sL]=useState("");
+  useEffect(()=>{const c=()=>{const[h,m]=time.split(":").map(Number);const diff=new Date(2026,4,day,h,m,0)-new Date();if(diff<=0){sL("Agora!");return;}const d=Math.floor(diff/86400000),hr=Math.floor((diff%86400000)/3600000),mn=Math.floor((diff%3600000)/60000);sL(d>0?`${d}d ${hr}h`:hr>0?`${hr}h ${mn}min`:`${mn}min`);};c();const i=setInterval(c,30000);return()=>clearInterval(i);},[day,time]);
+  if(!l)return null;
+  return<div style={{display:"inline-flex",alignItems:"center",gap:4,background:tipo==="Diurno"?Th.greenBg:Th.purpleBg,borderRadius:20,padding:"3px 10px"}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={tipo==="Diurno"?Th.green:Th.purple} strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span style={{fontSize:10,fontWeight:700,color:tipo==="Diurno"?Th.green:Th.purple}}>em {l}</span></div>;
+}
+function Modal({title,sub,onClose,children}){
+  const Th=G();
+  return(<div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(6,18,64,.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+    <div style={{background:Th.card,borderRadius:"22px 22px 0 0",width:"100%",maxWidth:430,maxHeight:"92vh",overflowY:"auto",paddingBottom:28,animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",justifyContent:"center",padding:"6px 0 0"}}><div style={{width:36,height:4,borderRadius:4,background:Th.border}}/></div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 18px 10px",borderBottom:`1px solid ${Th.border}`}}>
+        <div><div style={{fontSize:16,fontWeight:800,color:Th.h1}}>{title}</div>{sub&&<div style={{fontSize:10,color:Th.muted,marginTop:1}}>{sub}</div>}</div>
+        <button onClick={onClose} style={{background:Th.inp,border:"none",cursor:"pointer",color:Th.body,display:"flex",padding:6,borderRadius:8}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div style={{padding:"13px 18px 0"}}>{children}</div>
+    </div>
+  </div>);}
+function Sel({label,value,onChange,options}){
+  const Th=G();
+  return(<div style={{marginBottom:11}}>{label&&<label style={{display:"block",fontSize:10,fontWeight:700,color:Th.body,marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>{label}</label>}<select value={value} onChange={onChange} style={{width:"100%",padding:"10px 11px",borderRadius:9,border:`1.5px solid ${Th.inpB}`,outline:"none",fontSize:13,fontFamily:"'Nunito',sans-serif",color:Th.h1,background:Th.inp,boxSizing:"border-box",appearance:"none"}}>{options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></div>);}
+function Fld({label,value,onChange,type="text",placeholder,rows,T2}){
+  const Th=T2||G();const base={width:"100%",padding:"10px 11px",borderRadius:9,border:`1.5px solid ${Th.inpB}`,outline:"none",fontSize:13,fontFamily:"'Nunito',sans-serif",color:Th.h1,background:Th.inp,boxSizing:"border-box"};
+  return(<div style={{marginBottom:11}}>{label&&<label style={{display:"block",fontSize:10,fontWeight:700,color:Th.body,marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>{label}</label>}{rows?<textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={{...base,resize:"none"}}/>:<input type={type} value={value} onChange={onChange} placeholder={placeholder} style={base}/>}</div>);}
+function GeoCard({geo,check,onConfirm,label,color}){
+  const Th=G();const{status,dist,acc,ts}=geo;const inside=status==="dentro",outside=status==="fora",loading=status==="loading";const pct=dist!=null?Math.min(100,Math.round(dist/RAIO*100)):0;
+  return(<div style={{background:Th.inp,borderRadius:12,padding:"12px",marginBottom:10,border:`1.5px solid ${inside?Th.green:outside?Th.red:Th.border}`}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:dist!=null?8:5}}>
+      <div style={{width:28,height:28,borderRadius:"50%",background:inside?Th.greenBg:outside?Th.redBg:loading?Th.tealBg:Th.inp,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        {loading?<div style={{width:12,height:12,borderRadius:"50%",border:`2px solid ${Th.teal}`,borderTopColor:"transparent",animation:"spin .7s linear infinite"}}/>:inside?<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={Th.green} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>:outside?<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={Th.red} strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={Th.muted} strokeWidth="2"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 6.9 8 11.7z"/></svg>}
+      </div>
+      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:800,color:inside?Th.green:outside?Th.red:loading?Th.teal:Th.body}}>{status==="idle"&&"Verificar GPS"}{loading&&"Verificando…"}{inside&&"✓ Dentro da área"}{outside&&"✗ Fora da área"}{status==="negado"&&"⚠ GPS negado"}{status==="erro"&&"⚠ Erro GPS"}</div>{ts&&<div style={{fontSize:9,color:Th.muted}}>às {ts}{acc&&` · ±${acc}m`}</div>}</div>
+    </div>
+    {dist!=null&&<div style={{marginBottom:8}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:9,fontWeight:700,color:Th.muted}}>Distância</span><span style={{fontSize:10,fontWeight:800,color:inside?Th.green:Th.red}}>{dist}m / {RAIO}m</span></div><div style={{height:6,background:Th.border,borderRadius:10,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:inside?`linear-gradient(90deg,${Th.green},#22c55e)`:Th.red,borderRadius:10,transition:"width .5s ease"}}/></div></div>}
+    {(status==="idle"||outside||status==="negado"||status==="erro")&&<button onClick={check} style={{width:"100%",padding:"8px",background:Th.aBg,border:`1.5px solid ${Th.accent}`,borderRadius:8,color:Th.accent,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",marginBottom:inside&&onConfirm?6:0}}>📍 {status==="idle"?"Verificar localização":"Tentar novamente"}</button>}
+    {inside&&onConfirm&&<button onClick={onConfirm} style={{width:"100%",padding:"12px",background:color||Th.green,border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,boxShadow:`0 3px 12px ${Th.green}44`}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 6.9 8 11.7z"/></svg>{label}</button>}
+  </div>);}
+function NotifBanner({n,dm}){
+  useEffect(()=>{const t=setTimeout(()=>dm(n.id),6000);return()=>clearTimeout(t);},[n]);
+  const icons={troca:"🔄",ok:"✅",no:"❌",msg:"💬"};
+  return(<div onClick={()=>dm(n.id)} style={{position:"fixed",top:58,left:"50%",transform:"translateX(-50%)",width:"calc(100% - 22px)",maxWidth:408,zIndex:500,background:"#fff",borderRadius:16,padding:"11px 14px",boxShadow:"0 8px 32px rgba(0,0,0,.18)",border:`2px solid ${n.color}`,cursor:"pointer",display:"flex",alignItems:"center",gap:10,animation:"slideDown .3s ease",fontFamily:"'Nunito',sans-serif"}}>
+    <div style={{width:34,height:34,borderRadius:"50%",background:n.color+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:15}}>{icons[n.tipo]||"🔔"}</span></div>
+    <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{n.msg}</div>{n.time&&<div style={{fontSize:10,color:"#94a3b8"}}>{n.time}</div>}</div>
+    <div style={{width:6,height:6,borderRadius:"50%",background:n.color,flexShrink:0}}/>
+  </div>);}
+// Alerta urgente
+function AlertaBanner({msg,onDismiss}){
+  if(!msg)return null;
+  return(<div style={{position:"fixed",top:58,left:"50%",transform:"translateX(-50%)",width:"calc(100% - 22px)",maxWidth:408,zIndex:600,background:"#fef2f2",borderRadius:16,padding:"12px 14px",boxShadow:"0 8px 32px rgba(220,38,38,.25)",border:"2px solid #fca5a5",display:"flex",alignItems:"center",gap:10,animation:"slideDown .3s ease,shake .4s ease .3s",fontFamily:"'Nunito',sans-serif"}}>
+    <span style={{fontSize:20,flexShrink:0}}>🚨</span>
+    <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:"#991b1b"}}>AVISO URGENTE</div><div style={{fontSize:11,color:"#dc2626",lineHeight:1.4}}>{msg}</div></div>
+    <button onClick={onDismiss} style={{background:"none",border:"none",cursor:"pointer",color:"#dc2626",fontSize:16,padding:"2px 4px"}}>✕</button>
+  </div>);}
+// ── SPLASH ─────────────────────────────────────────────────
+function Splash({onDone}){
+  const[p,sP]=useState(0);
+  useEffect(()=>{const ts=[setTimeout(()=>sP(1),200),setTimeout(()=>sP(2),800),setTimeout(()=>sP(3),2200),setTimeout(()=>onDone(),2800)];return()=>ts.forEach(clearTimeout);},[]);
+  return(<div style={{position:"fixed",inset:0,zIndex:300,background:"linear-gradient(165deg,#0a1f5c 0%,#061240 60%,#0d0920 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",opacity:p===3?0:1,transition:"opacity .6s",pointerEvents:p===3?"none":"all"}}>
+    <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none"}}>
+      {[[300,300,-100,-100,"rgba(37,99,255,.18)"],[200,200,"auto","-50px","rgba(124,58,237,.12)"],[250,250,"-60px","auto","rgba(8,145,178,.1)"]].map(([w,h,t,l,bg],i)=><div key={i} style={{position:"absolute",width:w,height:h,borderRadius:"50%",background:`radial-gradient(circle,${bg} 0%,transparent 70%)`,top:t,right:i===0?-100:"auto",bottom:i===2?-50:"auto",left:l}}/>)}
+    </div>
+    <div style={{width:90,height:90,background:"rgba(255,255,255,.12)",backdropFilter:"blur(16px)",borderRadius:26,border:"1px solid rgba(255,255,255,.22)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 0 1px rgba(255,255,255,.1),0 20px 60px rgba(37,99,255,.4)",marginBottom:22,opacity:p>=1?1:0,transform:p>=1?"scale(1)":"scale(.4)",transition:"all .8s cubic-bezier(.34,1.56,.64,1)"}}>
+      <svg width="46" height="46" viewBox="0 0 46 46" fill="none"><rect x="18" y="6" width="10" height="34" rx="5" fill="white"/><rect x="6" y="18" width="34" height="10" rx="5" fill="white"/></svg>
+    </div>
+    <div style={{textAlign:"center",opacity:p>=2?1:0,transform:p>=2?"translateY(0)":"translateY(16px)",transition:"all .5s ease .1s"}}>
+      <div style={{fontSize:38,fontWeight:900,color:"#fff",letterSpacing:"-1px",lineHeight:1}}>Plantão<span style={{color:"#60a5fa"}}>+</span></div>
+      <div style={{fontSize:11,color:"rgba(255,255,255,.45)",letterSpacing:".18em",textTransform:"uppercase",marginTop:5}}>Pediatria · UPA JP · v6.0</div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,marginTop:16}}>{[0,.2,.4].map(d=><div key={d} style={{width:5,height:5,borderRadius:"50%",background:"#60a5fa",animation:`blink 1.4s ease-in-out ${d}s infinite`}}/>)}</div>
+    </div>
+    <div style={{position:"absolute",bottom:24,fontSize:11,color:"rgba(255,255,255,.25)",opacity:p>=2?1:0,transition:"opacity .5s .3s"}}>v6.0 · 2026 · Ultimate Edition</div>
+  </div>);}
+
+// ── LOGIN ──────────────────────────────────────────────────
+function Login({onLogin,users}){
+  const[login,sL]=useState("");const[pw,sPw]=useState("");const[show,sShow]=useState(false);const[err,sErr]=useState("");const[loading,sLoad]=useState(false);const[mt,sMt]=useState(false);
+  useEffect(()=>{setTimeout(()=>sMt(true),80);},[]);
+  const go=()=>{
+    if(!login.trim()||!pw.trim()){sErr("Preencha usuário e senha");return;}
+    sLoad(true);sErr("");
+    setTimeout(()=>{
+      const u=(users||USERS_DEFAULT).find(x=>x.login===login.trim().toLowerCase()&&x.senha===pw.trim()&&x.ativo!==false);
+      if(u){onLogin(u);}else{sErr("Usuário ou senha incorretos");sLoad(false);if(!login.trim()||!pw.trim())return;// shake handled by CSS
+      }
+    },700);
+  };
+  const demos=[{l:"Gestor",login:"rodrigo.cahuana",pw:"rodrigo2026",icon:"👑",c:"#93c5fd"},{l:"Ana Paula",login:"anapaula.sales",pw:"gome1909",icon:"👩‍⚕️",c:"#86efac"},{l:"Dieter",login:"dieter.benaia",pw:"bena3422",icon:"👨‍⚕️",c:"#c4b5fd"}];
+  return(<div style={{minHeight:"100dvh",background:"linear-gradient(165deg,#0a1f5c 0%,#061240 60%,#0d0920 100%)",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"'Nunito',sans-serif",overflowY:"auto",padding:"0 0 40px"}}>
+    <div style={{width:"100%",maxWidth:420,padding:"36px 22px 0",opacity:mt?1:0,transform:mt?"translateY(0)":"translateY(20px)",transition:"all .7s ease"}}>
+      <div style={{textAlign:"center",marginBottom:22}}>
+        <div style={{width:72,height:72,background:"rgba(255,255,255,.12)",backdropFilter:"blur(16px)",borderRadius:22,border:"1px solid rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",boxShadow:"0 16px 48px rgba(37,99,255,.4)"}}>
+          <svg width="36" height="36" viewBox="0 0 40 40" fill="none"><rect x="15" y="4" width="10" height="32" rx="5" fill="white"/><rect x="4" y="15" width="32" height="10" rx="5" fill="white"/></svg>
+        </div>
+        <div style={{fontSize:28,fontWeight:900,color:"#fff",letterSpacing:"-.5px"}}>Plantão<span style={{color:"#60a5fa"}}>+</span></div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.45)",marginTop:3}}>Pediatria · UPA João Pessoa · 2026</div>
+        <div style={{display:"inline-flex",alignItems:"center",gap:5,background:"rgba(74,222,128,.15)",border:"1px solid rgba(74,222,128,.3)",borderRadius:20,padding:"3px 11px",marginTop:8}}>
+          <div style={{width:5,height:5,borderRadius:"50%",background:"#4ade80",animation:"blink 1.4s ease-in-out infinite"}}/>
+          <span style={{fontSize:10,fontWeight:700,color:"#4ade80"}}>Tempo Real · v6.0 Ultimate</span>
+        </div>
+      </div>
+      <h2 style={{fontSize:18,fontWeight:800,color:"#fff",margin:"0 0 4px"}}>Entrar na conta</h2>
+      <p style={{fontSize:12,color:"rgba(255,255,255,.45)",margin:"0 0 16px"}}>Login e senha fornecidos pelo gestor</p>
+      {[{ph:"Login",val:login,set:sL,type:"text",icon:"👤"},{ph:"Senha",val:pw,set:sPw,type:show?"text":"password",icon:"🔒",eye:true}].map((f,i)=>(
+        <div key={i} style={{position:"relative",background:"rgba(255,255,255,.07)",border:"1.5px solid rgba(255,255,255,.14)",borderRadius:13,marginBottom:9}}>
+          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14}}>{f.icon}</span>
+          <input type={f.type} placeholder={f.ph} value={f.val} onChange={e=>{f.set(e.target.value);sErr("");}} onKeyDown={e=>e.key==="Enter"&&go()} style={{width:"100%",padding:`12px ${f.eye?"38px":"12px"} 12px 36px`,background:"transparent",border:"none",outline:"none",color:"#fff",fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          {f.eye&&<button onClick={()=>sShow(!show)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,.4)",padding:3,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{show?<><line x1="1" y1="1" x2="23" y2="23"/><path d="M17 17H3"/></>:<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>}</svg></button>}
+        </div>
+      ))}
+      {err&&<div style={{background:"rgba(220,38,38,.2)",border:"1px solid rgba(220,38,38,.35)",borderRadius:9,padding:"7px 11px",marginBottom:11,fontSize:12,color:"#fca5a5",fontWeight:600,animation:"shake .4s ease"}}>⚠ {err}</div>}
+      <button onClick={go} style={{width:"100%",padding:"13px",background:loading?"rgba(37,99,255,.6)":"linear-gradient(135deg,#2563ff,#1d4ed8)",border:"none",borderRadius:13,color:"#fff",fontSize:15,fontWeight:700,fontFamily:"inherit",cursor:"pointer",boxShadow:"0 4px 20px rgba(37,99,255,.45)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:18}}>
+        {loading?<><div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,.3)",borderTopColor:"#fff",animation:"spin .7s linear infinite"}}/>Entrando...</>:"Entrar no Plantão+ →"}
+      </button>
+      <div style={{background:"rgba(255,255,255,.05)",borderRadius:13,padding:"12px 14px",border:"1px solid rgba(255,255,255,.09)"}}>
+        <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:9}}>Acesso rápido</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+          {demos.map(d=>(
+            <button key={d.l} onClick={()=>{sL(d.login);sPw(d.pw);sErr("");}} style={{padding:"8px 5px",background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,cursor:"pointer",fontFamily:"inherit",color:"#fff",fontSize:10,fontWeight:700,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              <span style={{fontSize:16}}>{d.icon}</span><span style={{color:d.c,fontSize:9}}>{d.l}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>);}
+// ── HOME GESTOR ────────────────────────────────────────────
+function HomeGestor({shifts,trocas,msgs,users,setTab,ok,darkMode,setDarkMode,addLog}){
+  const Th=G();
+  const all=useMemo(()=>Object.values(shifts).flat(),[shifts]);
+  const em=all.filter(s=>s.status==="em_andamento"),ag=all.filter(s=>s.status==="agendado");
+  const pt=(trocas||[]).filter(t=>t.status==="pendente");
+  const semCob=ag.filter(s=>s.plantonistas.length<2);
+  const ps=useMemo(()=>(users||USERS_DEFAULT).filter(u=>u.role==="plantonista"&&u.ativo!==false),[users]);
+  const totalFin=useMemo(()=>ps.reduce((a,u)=>a+calcSalary(u.id,shifts).total,0),[shifts,ps]);
+  const[showAlert,sShowAlert]=useState(false);const[alertMsg,sAlertMsg]=useState("");
+  const[showRelat,sShowRelat]=useState(false);
+  const sendAlert=async()=>{if(!alertMsg.trim())return;await addLog({tipo:"alerta",msg:alertMsg,hora:nowFull(),de:0});sAlertMsg("");sShowAlert(false);};
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    {/* Header */}
+    <div style={{padding:"46px 16px 20px",background:Th.gradH,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:300,height:300,borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,255,.18) 0%,transparent 70%)",top:-100,right:-80,pointerEvents:"none"}}/>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,position:"relative"}}>
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}><span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase"}}>Plantão+ v6.0</span><SyncDot ok={ok}/></div>
+          <div style={{fontSize:20,fontWeight:900,color:"#fff",letterSpacing:"-.3px"}}>Olá, Dr. Rodrigo 👋</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>Ter, 26 de Maio de 2026</div>
+        </div>
+        <div style={{display:"flex",gap:7,alignItems:"center"}}>
+          <button onClick={()=>sShowAlert(true)} style={{width:36,height:36,borderRadius:"50%",background:"rgba(220,38,38,.3)",border:"1px solid rgba(220,38,38,.5)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}} title="Aviso urgente"><span style={{fontSize:15}}>🚨</span></button>
+          <button onClick={()=>setDarkMode(!darkMode)} style={{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:15}}>{darkMode?"☀️":"🌙"}</span></button>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"linear-gradient(135deg,#2563ff,#1d4ed8)",border:"2.5px solid rgba(255,255,255,.3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,color:"#fff",fontSize:15}}>RC</div>
+        </div>
+      </div>
+      {/* Stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:7}}>
+        {[{v:em.length,l:"Ao vivo",c:"#60a5fa",dot:true},{v:ag.length,l:"Agendados",c:"#86efac"},{v:pt.length,l:"Trocas",c:"#c4b5fd"},{v:semCob.length,l:"Descobertos",c:"#fca5a5"}].map(s=>(
+          <div key={s.l} style={{background:"rgba(255,255,255,.1)",borderRadius:11,padding:"9px 5px",textAlign:"center",border:s.v>0&&s.l==="Descobertos"?"1px solid rgba(252,165,165,.4)":"none"}}>
+            <div style={{fontSize:19,fontWeight:900,color:s.c,display:"flex",alignItems:"center",justifyContent:"center",gap:2}}>{s.dot&&s.v>0&&<div style={{width:5,height:5,borderRadius:"50%",background:s.c,animation:"pulse2 1.5s infinite"}}/>}{s.v}</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.45)",marginTop:1,fontWeight:600}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div style={{padding:"13px 12px"}}>
+      {/* Alertas */}
+      {semCob.length>0&&<div style={{background:"#fef2f2",borderRadius:12,padding:"10px 13px",marginBottom:10,border:"1.5px solid #fecaca",display:"flex",gap:8,alignItems:"flex-start"}}>
+        <span style={{fontSize:18}}>⚠️</span><div><div style={{fontSize:12,fontWeight:700,color:"#991b1b"}}>{semCob.length} plantão(ões) sem cobertura</div><div style={{fontSize:10,color:"#b91c1c"}}>Adicione plantonistas na escala</div></div>
+      </div>}
+      {pt.length>0&&<div onClick={()=>setTab("trocas")} style={{background:`linear-gradient(135deg,${Th.purpleBg},#ddd6fe)`,borderRadius:12,padding:"10px 13px",marginBottom:10,cursor:"pointer",border:"1.5px solid #c4b5fd",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:18}}>🔄</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:Th.purple}}>{pt.length} troca(s) aguardando</div><div style={{fontSize:10,color:"#6d28d9"}}>Toque para gerenciar</div></div>
+        <div style={{width:7,height:7,borderRadius:"50%",background:Th.purple,animation:"pulse2 1s infinite"}}/>
+      </div>}
+      {/* Financeiro resumo */}
+      <div style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8)",borderRadius:14,padding:"16px 18px",marginBottom:13,boxShadow:"0 8px 32px rgba(37,99,255,.3)",position:"relative",overflow:"hidden",cursor:"pointer"}} onClick={()=>setTab("financeiro")}>
+        <div style={{position:"absolute",width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,.06)",right:-20,top:-20}}/>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginBottom:3}}>Total estimado · Maio 2026</div>
+        <div style={{fontSize:28,fontWeight:900,color:"#fff",letterSpacing:"-1px",marginBottom:7}}>{fmtR(totalFin)}</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <div style={{background:"rgba(255,255,255,.12)",borderRadius:20,padding:"3px 10px"}}><span style={{fontSize:10,fontWeight:700,color:"#fcd34d"}}>1–6 plantões: R$825</span></div>
+          <div style={{background:"rgba(255,255,255,.12)",borderRadius:20,padding:"3px 10px"}}><span style={{fontSize:10,fontWeight:700,color:"#86efac"}}>7+ plantões: R$1.185</span></div>
+        </div>
+      </div>
+      {/* Plantões ao vivo */}
+      {em.length>0&&<>
+        <div style={{fontSize:12,fontWeight:700,color:Th.h1,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><div style={{width:7,height:7,borderRadius:"50%",background:Th.accent,animation:"pulse2 1.5s infinite"}}/>Ao vivo agora</div>
+        {em.map(s=>{const ps2=s.plantonistas.map(id=>(users||USERS_DEFAULT).find(u=>u.id===id)).filter(Boolean);const day=Object.entries(shifts).find(([,v])=>v.find(x=>x.id===s.id))?.[0];return(
+          <div key={s.id} style={{background:Th.card,borderRadius:13,padding:"12px 14px",marginBottom:8,boxShadow:"0 2px 12px rgba(37,99,255,.1)",border:"1.5px solid rgba(37,99,255,.18)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:12,fontWeight:700,color:Th.accent}}>{s.tipo==="Diurno"?"☀️":"🌙"} {s.time}–{s.timeEnd}</span><Bdg tipo={s.tipo} status={s.status}/></div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{ps2.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:5,background:Th.bg,borderRadius:8,padding:"4px 8px"}}><Av name={p.nome} size={22} ini={p.ini} color={p.color} foto={p.foto}/><div><div style={{fontSize:10,fontWeight:700,color:Th.h1}}>{p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</div>{s.entradas?.[p.id]&&<div style={{fontSize:9,color:Th.green,fontWeight:600}}>✓ {s.entradas[p.id]}</div>}</div></div>)}</div>
+          </div>);})}
+      </>}
+      {/* Próximos */}
+      {ag.length>0&&<>
+        <div style={{fontSize:12,fontWeight:700,color:Th.h1,marginBottom:8,marginTop:2}}>📅 Próximos plantões</div>
+        {ag.slice(0,4).map(s=>{
+          const ps2=s.plantonistas.map(id=>(users||USERS_DEFAULT).find(u=>u.id===id)).filter(Boolean);
+          const day=Object.entries(shifts).find(([,v])=>v.find(x=>x.id===s.id))?.[0];
+          const d=new Date(2026,4,parseInt(day));
+          return(<div key={s.id} style={{background:Th.card,borderRadius:12,padding:"11px 13px",marginBottom:7,boxShadow:Th.sh}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:32,height:32,borderRadius:9,background:s.tipo==="Diurno"?Th.greenBg:Th.purpleBg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <div style={{fontSize:11,fontWeight:900,color:s.tipo==="Diurno"?Th.green:Th.purple}}>{day}</div>
+                  <div style={{fontSize:7,fontWeight:700,color:s.tipo==="Diurno"?Th.green:Th.purple}}>{DS[d.getDay()].toUpperCase()}</div>
+                </div>
+                <div><div style={{fontSize:11,fontWeight:700,color:Th.h1}}>{s.tipo==="Diurno"?"☀️":"🌙"} {s.time}–{s.timeEnd}</div><div style={{fontSize:9,color:Th.body}}>{s.setor}</div></div>
+              </div>
+              <Countdown day={parseInt(day)} time={s.time} tipo={s.tipo}/>
+            </div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{ps2.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:4,background:Th.bg,borderRadius:6,padding:"3px 7px"}}><Av name={p.nome} size={16} ini={p.ini} color={p.color} foto={p.foto}/><span style={{fontSize:10,fontWeight:600,color:Th.body}}>{p.nome.replace(/Dr\. |Dra\. /,"").split(" ")[0]}</span></div>)}</div>
+          </div>);
+        })}
+      </>}
+      {/* Log recente */}
+      <div onClick={()=>sShowRelat(true)} style={{background:Th.card,borderRadius:12,padding:"11px 13px",marginTop:4,boxShadow:Th.sh,cursor:"pointer",border:`1px solid ${Th.border}`,display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:18}}>📋</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:Th.h1}}>Relatório de atividades</div><div style={{fontSize:10,color:Th.muted}}>Ver histórico completo</div></div>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={Th.muted} strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+      </div>
+    </div>
+    {/* Alert modal */}
+    {showAlert&&<Modal title="🚨 Enviar Aviso Urgente" sub="Aparece como banner para todos os usuários" onClose={()=>sShowAlert(false)}>
+      <div style={{background:"#fef2f2",borderRadius:10,padding:"9px 12px",marginBottom:12,border:"1px solid #fecaca",fontSize:11,color:"#991b1b"}}>⚠ O aviso aparecerá imediatamente para todos que estiverem com o app aberto.</div>
+      <Fld label="Mensagem do aviso" value={alertMsg} onChange={e=>sAlertMsg(e.target.value)} placeholder="Ex: Reunião obrigatória às 14h na sala 2…" rows={3}/>
+      <button onClick={sendAlert} disabled={!alertMsg.trim()} style={{width:"100%",padding:"12px",background:alertMsg.trim()?Th.red:"#e2e8f0",border:"none",borderRadius:10,color:alertMsg.trim()?"#fff":Th.muted,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:alertMsg.trim()?"pointer":"not-allowed"}}>🚨 Enviar aviso urgente</button>
+    </Modal>}
+    {showRelat&&<RelatModal shifts={shifts} users={users} onClose={()=>sShowRelat(false)}/>}
+  </div>);}
+
+// ── HOME PLANTONISTA ───────────────────────────────────────
+function HomePlant({user,shifts,trocas,setTab,ok,users}){
+  const Th=G();
+  const allU=users||USERS_DEFAULT;
+  const mine=useMemo(()=>Object.entries(shifts).flatMap(([day,ss])=>ss.filter(s=>s.plantonistas.includes(user.id)).map(s=>({...s,day:parseInt(day)}))),[shifts,user.id]);
+  const hoje=mine.find(s=>s.day===26);const prox=mine.filter(s=>s.day>26).sort((a,b)=>a.day-b.day);
+  const mT=(trocas||[]).filter(t=>t.status==="pendente"&&(t.dono===user.id||t.receptor===user.id));
+  const sal=useMemo(()=>calcSalary(user.id,shifts),[shifts,user.id]);
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    <div style={{padding:"46px 16px 20px",background:Th.gradH,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:250,height:250,borderRadius:"50%",background:`radial-gradient(circle,${user.color}30 0%,transparent 70%)`,top:-60,right:-60,pointerEvents:"none"}}/>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,position:"relative"}}>
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}><span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase"}}>Plantão+</span><SyncDot ok={ok}/></div>
+          <div style={{fontSize:19,fontWeight:900,color:"#fff"}}>Olá, {user.nome.replace(/Dr\. |Dra\. /,"").split(" ")[0]} 👋</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>{user.crm} · Pediatria UPA JP</div>
+        </div>
+        <Av name={user.nome} size={46} ini={user.ini} color={user.color} foto={user.foto}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {[{v:sal.count,l:"Plantões",c:"#60a5fa"},{v:fmtR(sal.total),l:"Ganhos",c:"#86efac",small:true},{v:prox.length,l:"Agendados",c:"rgba(255,255,255,.6)"}].map(s=>(
+          <div key={s.l} style={{background:"rgba(255,255,255,.1)",borderRadius:11,padding:"9px 6px",textAlign:"center"}}><div style={{fontSize:s.small?12:19,fontWeight:900,color:s.c,letterSpacing:s.small?"-.3px":"normal"}}>{s.v}</div><div style={{fontSize:9,color:"rgba(255,255,255,.45)",marginTop:1,fontWeight:600}}>{s.l}</div></div>
+        ))}
+      </div>
+    </div>
+    <div style={{padding:"13px 12px"}}>
+      {mT.length>0&&<div onClick={()=>setTab("trocas")} style={{background:`linear-gradient(135deg,${Th.purpleBg},#ddd6fe)`,borderRadius:12,padding:"10px 13px",marginBottom:11,cursor:"pointer",border:"1.5px solid #c4b5fd",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:18}}>🔄</span><div style={{flex:1}}><div style={{fontSize:11,fontWeight:700,color:Th.purple}}>{mT.filter(t=>t.receptor===user.id).length>0?"Você recebeu troca!":"Sua troca aguarda"}</div></div>
+        <div style={{width:7,height:7,borderRadius:"50%",background:Th.purple,animation:"pulse2 1s infinite"}}/>
+      </div>}
+      {/* Próximo com countdown e valor */}
+      {prox.length>0&&(()=>{const s=prox[0];const colegas=s.plantonistas.filter(id=>id!==user.id).map(id=>allU.find(u=>u.id===id)).filter(Boolean);const d=new Date(2026,4,s.day);return(
+        <div style={{background:`linear-gradient(135deg,${s.tipo==="Diurno"?"#dcfce7,#bbf7d0":"#ede9fe,#ddd6fe"})`,borderRadius:14,padding:"14px 16px",marginBottom:12,border:`1.5px solid ${s.tipo==="Diurno"?"#86efac":"#c4b5fd"}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:s.tipo==="Diurno"?Th.green:Th.purple,textTransform:"uppercase",marginBottom:5}}>Próximo plantão</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <div><div style={{fontSize:17,fontWeight:900,color:s.tipo==="Diurno"?Th.green:Th.purple}}>{s.tipo==="Diurno"?"☀️":"🌙"} {String(s.day).padStart(2,"0")}/05 · {s.time}–{s.timeEnd}</div><div style={{fontSize:10,color:Th.body}}>{DNAMES[d.getDay()]}</div></div>
+            <Countdown day={s.day} time={s.time} tipo={s.tipo}/>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            {colegas.length>0&&<div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:10,color:Th.body}}>Com:</span>{colegas.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:4}}><Av name={c.nome} size={20} ini={c.ini} color={c.color} foto={c.foto}/><span style={{fontSize:10,fontWeight:600,color:Th.h1}}>{c.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span></div>)}</div>}
+            <SBadge num={sal.nextNum}/>
+          </div>
+        </div>);}
+      )()}
+      {hoje&&<>
+        <div style={{fontSize:12,fontWeight:700,color:Th.h1,marginBottom:7}}>📋 Plantão de hoje</div>
+        <div style={{background:Th.card,borderRadius:13,padding:"12px 13px",marginBottom:11,boxShadow:Th.sh,border:`1.5px solid ${hoje.status==="em_andamento"?Th.accent:Th.border}`}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:12,fontWeight:700,color:hoje.status==="em_andamento"?Th.accent:hoje.tipo==="Diurno"?Th.green:Th.purple}}>{hoje.tipo==="Diurno"?"☀️":"🌙"} {hoje.time}–{hoje.timeEnd}</span><Bdg tipo={hoje.tipo} status={hoje.status}/></div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{hoje.plantonistas.map(pid=>{const p=allU.find(u=>u.id===pid);return p?(<div key={pid} style={{display:"flex",alignItems:"center",gap:6,background:pid===user.id?`${user.color}12`:Th.bg,borderRadius:9,padding:"5px 8px",border:pid===user.id?`1.5px solid ${user.color}44`:`1px solid ${Th.border}`}}>
+            <Av name={p.nome} size={24} ini={p.ini} color={p.color} foto={p.foto}/>
+            <div><div style={{fontSize:10,fontWeight:700,color:pid===user.id?user.color:Th.h1}}>{pid===user.id?"Você":p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</div>{hoje.entradas?.[pid]&&<div style={{fontSize:9,color:Th.green,fontWeight:600}}>✓ {hoje.entradas[pid]}</div>}</div>
+          </div>):null;})}</div>
+        </div>
+      </>}
+      {/* Mini resumo financeiro */}
+      {sal.count>0&&<div style={{background:Th.card,borderRadius:13,padding:"12px 14px",boxShadow:Th.sh}}>
+        <div style={{fontSize:11,fontWeight:700,color:Th.h1,marginBottom:10}}>💰 Meu resumo · Maio 2026</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {[{l:"Total ganho",v:fmtR(sal.total),c:Th.green},{l:`Próx. plantão #${sal.nextNum}`,v:fmtR(sal.next),c:sal.nextNum>6?Th.gold:Th.green},{l:"Horas trabalhadas",v:`${sal.count*12}h`,c:Th.accent},{l:"Plantões",v:sal.count,c:Th.purple}].map(i=>(
+            <div key={i.l} style={{background:Th.bg,borderRadius:9,padding:"9px 10px"}}><div style={{fontSize:9,color:Th.muted,marginBottom:3}}>{i.l}</div><div style={{fontSize:14,fontWeight:900,color:i.c}}>{i.v}</div></div>
+          ))}
+        </div>
+      </div>}
+    </div>
+  </div>);}
+
+// ── RELATÓRIO MODAL ────────────────────────────────────────
+function RelatModal({shifts,users,onClose}){
+  const Th=G();const allU=users||USERS_DEFAULT;const ps=allU.filter(u=>u.role==="plantonista"&&u.ativo!==false);
+  const all=useMemo(()=>Object.entries(shifts).flatMap(([d,ss])=>ss.map(s=>({...s,day:parseInt(d)}))),[shifts]);
+  const concl=all.filter(s=>s.status==="concluido"||s.status==="fechado_gestor");
+  const ag=all.filter(s=>s.status==="agendado");const em=all.filter(s=>s.status==="em_andamento");
+  const totalPlantoes=concl.length,totalHoras=totalPlantoes*12;
+  const totalFin=ps.reduce((a,u)=>a+calcSalary(u.id,shifts).total,0);
+  const diasCobertos=new Set(concl.map(s=>s.day)).size;
+  const porTipo={Diurno:concl.filter(s=>s.tipo==="Diurno").length,Noturno:concl.filter(s=>s.tipo==="Noturno").length};
+  const copyRelat=()=>{
+    const t=`📊 RELATÓRIO PLANTÃO+ · Maio 2026\n${"─".repeat(28)}\n✅ Plantões concluídos: ${totalPlantoes}\n⏱ Total de horas: ${totalHoras}h\n📅 Dias cobertos: ${diasCobertos}\n☀️ Diurnos: ${porTipo.Diurno} | 🌙 Noturnos: ${porTipo.Noturno}\n💰 Total financeiro: ${fmtR(totalFin)}\n\nPOR MÉDICO:\n${ps.map(u=>{const s=calcSalary(u.id,shifts);return s.count>0?`• ${u.nome.replace(/Dr\. |Dra\. /,"")}: ${s.count} plantões · ${fmtR(s.total)}`:null;}).filter(Boolean).join("\n")}\n${"─".repeat(28)}\nPlantão+ v6.0 · ${new Date().toLocaleDateString("pt-BR")}`;
+    navigator.clipboard?.writeText(t);
+  };
+  return(<Modal title="📋 Relatório de Atividades" sub="Maio 2026 · Pediatria UPA JP" onClose={onClose}>
+    <div style={{background:Th.bg,borderRadius:11,padding:"12px",marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+        {[{l:"Plantões concluídos",v:totalPlantoes,c:Th.green,i:"✅"},{l:"Horas trabalhadas",v:`${totalHoras}h`,c:Th.accent,i:"⏱"},{l:"Total financeiro",v:fmtR(totalFin),c:Th.gold,i:"💰"},{l:"Dias cobertos",v:diasCobertos,c:Th.purple,i:"📅"}].map(i=>(
+          <div key={i.l} style={{background:Th.card,borderRadius:10,padding:"10px 11px",border:`1px solid ${Th.border}`}}>
+            <div style={{fontSize:14,marginBottom:3}}>{i.i}</div><div style={{fontSize:15,fontWeight:900,color:i.c}}>{i.v}</div><div style={{fontSize:9,color:Th.muted,marginTop:2}}>{i.l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+        {[{l:"Diurnos",v:porTipo.Diurno,c:Th.green,bg:Th.greenBg},{l:"Noturnos",v:porTipo.Noturno,c:Th.purple,bg:Th.purpleBg}].map(i=>(
+          <div key={i.l} style={{background:i.bg,borderRadius:10,padding:"9px 11px",border:`1px solid ${i.c}33`}}>
+            <div style={{fontSize:14,fontWeight:900,color:i.c}}>{i.v}</div><div style={{fontSize:10,color:i.c}}>{i.l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{fontSize:11,fontWeight:700,color:Th.h1,marginBottom:8}}>Por médico</div>
+      {ps.filter(u=>calcSalary(u.id,shifts).count>0).sort((a,b)=>calcSalary(b.id,shifts).count-calcSalary(a.id,shifts).count).map(u=>{
+        const s=calcSalary(u.id,shifts);const pct=Math.round(s.count/Math.max(1,totalPlantoes/ps.length)*100);
+        return(<div key={u.id} style={{marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><Av name={u.nome} size={18} ini={u.ini} color={u.color} foto={u.foto}/><span style={{fontSize:10,fontWeight:700,color:Th.h1}}>{u.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span></div>
+            <span style={{fontSize:10,fontWeight:800,color:Th.green}}>{fmtR(s.total)}</span>
+          </div>
+          <div style={{height:4,background:Th.border,borderRadius:20,overflow:"hidden"}}><div style={{height:"100%",background:`linear-gradient(90deg,${u.color},${u.color}88)`,borderRadius:20,transition:"width .8s ease",width:`${Math.min(100,s.count*20)}%`}}/></div>
+          <div style={{fontSize:9,color:Th.muted,marginTop:1}}>{s.count} plantões · {s.count*12}h</div>
+        </div>);
+      })}
+    </div>
+    <button onClick={copyRelat} style={{width:"100%",padding:"11px",background:Th.aBg,border:`1.5px solid ${Th.accent}`,borderRadius:10,color:Th.accent,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",marginBottom:8}}>📋 Copiar relatório completo</button>
+    <button onClick={()=>window.open(`https://wa.me/?text=${encodeURIComponent(`📊 RELATÓRIO PLANTÃO+ · Maio 2026\nPediatria UPA JP\n\n✅ ${totalPlantoes} plantões · ⏱ ${totalHoras}h · 💰 ${fmtR(totalFin)}\n\nPlantão+ v6.0`)}`),"_blank"} style={{width:"100%",padding:"11px",background:"#25D366",border:"none",borderRadius:10,color:"#fff",fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>💬 Compartilhar no WhatsApp</button>
+  </Modal>);}
+// ── ESCALA ─────────────────────────────────────────────────
+function Escala({user,shifts,setShifts,trocas,ok,users,addLog}){
+  const Th=G();const allU=users||USERS_DEFAULT;const today=new Date(2026,4,26);
+  const[vy,sVy]=useState(2026);const[vm,sVm]=useState(4);const[sel,sSel]=useState(26);
+  const[det,sDet]=useState(null);const[showAdd,sAdd]=useState(false);const[showExp,sExp]=useState(false);
+  const[viewMode,sView]=useState("mensal");
+  const[form,sForm]=useState({p1:"",p2:"",time:"07:00",timeEnd:"19:00",tipo:"Diurno",obs:"",recorrente:false});
+  const{geo,check}=useGeo();const isG=user.role==="gestor";
+  const ps=allU.filter(u=>u.role==="plantonista"&&u.ativo!==false);
+  const firstDow=new Date(vy,vm,1).getDay(),dim=new Date(vy,vm+1,0).getDate(),dip=new Date(vy,vm,0).getDate();
+  const cells=[];for(let i=0;i<firstDow;i++)cells.push({day:dip-firstDow+1+i,oth:true});for(let d=1;d<=dim;d++)cells.push({day:d,oth:false});const rem=42-cells.length;for(let i=1;i<=rem;i++)cells.push({day:i,oth:true});
+  const isCM=vy===today.getFullYear()&&vm===today.getMonth();const ds=sel?(shifts[sel]||[]):[];
+  const prevM=()=>{if(vm===0){sVm(11);sVy(y=>y-1);}else sVm(m=>m-1);sSel(null);};
+  const nextM=()=>{if(vm===11){sVm(0);sVy(y=>y+1);}else sVm(m=>m+1);sSel(null);};
+  
+  const regE=(sId,uid)=>{setShifts(p=>{const u=JSON.parse(JSON.stringify(p));const s=u[sel]?.find(x=>x.id===sId);if(!s)return p;s.entradas={...s.entradas,[uid]:nowHM()};if(s.plantonistas.every(id=>s.entradas[id]))s.status="em_andamento";return u;});addLog({tipo:"entrada",uid,plantaoId:sId,hora:nowFull(),de:user.id});sDet(null);};
+  const regS=(sId,uid)=>{setShifts(p=>{const u=JSON.parse(JSON.stringify(p));const s=u[sel]?.find(x=>x.id===sId);if(!s)return p;s.saidas={...s.saidas,[uid]:nowHM()};if(s.plantonistas.every(id=>s.saidas[id]))s.status="concluido";return u;});addLog({tipo:"saida",uid,plantaoId:sId,hora:nowFull(),de:user.id});sDet(null);};
+  const fecharG=(sId)=>{setShifts(p=>{const u=JSON.parse(JSON.stringify(p));const s=u[sel]?.find(x=>x.id===sId);if(!s)return p;s.plantonistas.forEach(id=>{if(!s.saidas[id])s.saidas[id]=nowHM();});s.status="fechado_gestor";return u;});addLog({tipo:"fechamento_gestor",plantaoId:sId,hora:nowFull(),de:user.id});sDet(null);};
+  const delS=(id)=>{setShifts(p=>{const u={...p};u[sel]=(u[sel]||[]).filter(s=>s.id!==id);return u;});addLog({tipo:"remocao",plantaoId:id,hora:nowFull(),de:user.id});sDet(null);};
+  const confirmarP=(sId,uid)=>{setShifts(p=>{const u=JSON.parse(JSON.stringify(p));const s=u[sel]?.find(x=>x.id===sId);if(s){if(!s.confirmados)s.confirmados={};s.confirmados[uid]=nowFull();}return u;});};
+  const addObs=(sId,obs)=>{setShifts(p=>{const u=JSON.parse(JSON.stringify(p));const s=u[sel]?.find(x=>x.id===sId);if(s)s.obs=obs;return u;});};
+  const copiarMesAnterior=()=>{
+    const prevMonthShifts=shifts;// in real app would load prev month
+    if(confirm("Copiar estrutura do mês atual para o próximo mês?")){ alert("Estrutura copiada! (Em produção copiaria para o próximo mês)"); }
+  };
+
+  const addS=()=>{
+    if(!form.p1||!form.p2||form.p1===form.p2)return;
+    const base={plantonistas:[parseInt(form.p1),parseInt(form.p2)],time:form.time,timeEnd:form.timeEnd,setor:"Pediatria UPA",tipo:form.tipo,status:"agendado",entradas:{},saidas:{},obs:form.obs,pago:{},confirmados:{}};
+    if(form.recorrente){
+      // Add every week for the month
+      const toAdd={};
+      for(let d=sel;d<=dim;d+=7){if(!toAdd[d])toAdd[d]=[];toAdd[d].push({...base,id:Date.now()+d});}
+      setShifts(p=>{const u=JSON.parse(JSON.stringify(p));Object.entries(toAdd).forEach(([d,ss])=>{if(!u[d])u[d]=[];u[d]=[...u[d],...ss];});return u;});
+    }else{
+      setShifts(p=>({...p,[sel]:[...(p[sel]||[]),{...base,id:Date.now()}]}));
+    }
+    addLog({tipo:"lancamento",plantaoId:Date.now(),dia:sel,hora:nowFull(),de:user.id});
+    sAdd(false);sForm({p1:"",p2:"",time:"07:00",timeEnd:"19:00",tipo:"Diurno",obs:"",recorrente:false});
+  };
+
+  const sCard=(s)=>{
+    const Th2=Th;const bc=s.status==="em_andamento"?Th2.accent:s.status==="fechado_gestor"?Th2.orange:s.tipo==="Diurno"?Th2.green:Th2.purple;
+    const ps2=s.plantonistas.map(id=>allU.find(u=>u.id===id)).filter(Boolean);const myS=s.plantonistas.includes(user.id);
+    const hasTr=(trocas||[]).some(t=>(t.shiftId===s.id||t.shiftDest===s.id)&&t.status==="pendente");
+    const pendConf=!isG&&myS&&!s.confirmados?.[user.id]&&s.status==="agendado";
+    return(<div key={s.id} onClick={()=>sDet(s)} style={{background:Th2.card,borderRadius:13,padding:"11px 13px",marginBottom:8,boxShadow:myS?`0 3px 16px rgba(37,99,255,.12)`:Th2.sh,cursor:"pointer",borderLeft:`4px solid ${bc}`,transition:"transform .1s"}} onMouseOver={e=>e.currentTarget.style.transform="translateX(2px)"} onMouseOut={e=>e.currentTarget.style.transform="none"}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+        <span style={{fontSize:12,fontWeight:700,color:bc}}>{s.tipo==="Diurno"?"☀️":"🌙"} {s.time}–{s.timeEnd}</span>
+        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+          {pendConf&&<span style={{fontSize:9,fontWeight:700,color:Th2.orange,background:Th2.orangeBg,padding:"2px 6px",borderRadius:20,animation:"pulse2 1.5s infinite"}}>✉ Confirmar</span>}
+          {myS&&<span style={{fontSize:9,fontWeight:700,color:Th2.accent,background:Th2.aBg,padding:"2px 6px",borderRadius:20}}>Meu turno</span>}
+          {hasTr&&<span style={{fontSize:9,fontWeight:700,color:Th2.purple,background:Th2.purpleBg,padding:"2px 6px",borderRadius:20}}>🔄</span>}
+          <Bdg tipo={s.tipo} status={s.status}/>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:s.obs?5:0}}>{ps2.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:5,background:p.id===user.id?`${user.color}12`:Th2.bg,borderRadius:8,padding:"4px 8px"}}>
+        <Av name={p.nome} size={20} ini={p.ini} color={p.color} foto={p.foto}/>
+        <div><div style={{fontSize:10,fontWeight:700,color:p.id===user.id?user.color:Th2.h1}}>{p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</div>
+          {s.entradas?.[p.id]&&<div style={{fontSize:8,color:Th2.green,fontWeight:600}}>✓ {s.entradas[p.id]}</div>}
+          {s.saidas?.[p.id]&&<div style={{fontSize:8,color:Th2.muted,fontWeight:600}}>↗ {s.saidas[p.id]}</div>}
+          {s.confirmados?.[p.id]&&!s.entradas?.[p.id]&&<div style={{fontSize:8,color:Th2.teal,fontWeight:600}}>✉ Confirmado</div>}
+        </div>
+      </div>)}</div>
+      {s.obs&&<div style={{fontSize:10,color:Th.body,fontStyle:"italic",marginTop:3}}>📝 {s.obs}</div>}
+    </div>);
+  };
+
+  const weekDays=useMemo(()=>{if(!sel)return[];const d=new Date(2026,4,sel);const dow=d.getDay();const days=[];for(let i=0;i<7;i++){const dd=sel-dow+i;if(dd>=1&&dd<=dim)days.push(dd);}return days;},[sel,dim]);
+
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    <div style={{padding:"44px 14px 12px",background:Th.gradH}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}><span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase"}}>Plantão+</span><SyncDot ok={ok}/></div><div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Escala · {MONTHS[vm]} {vy}</div></div>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>sExp(true)} style={{background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:9,padding:"6px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:"#fff",fontSize:10,fontWeight:700,fontFamily:"inherit"}}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>Exp.
+          </button>
+          {isG&&sel&&<button onClick={()=>sAdd(true)} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"6px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:"#fff",fontSize:10,fontWeight:700,fontFamily:"inherit"}}>+Novo</button>}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        {["mensal","semanal"].map(v=><button key={v} onClick={()=>sView(v)} style={{padding:"5px 12px",borderRadius:20,border:"none",background:viewMode===v?"rgba(255,255,255,.25)":"rgba(255,255,255,.08)",color:viewMode===v?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:10,fontFamily:"inherit",cursor:"pointer"}}>{v==="mensal"?"📅 Mensal":"🗓️ Semanal"}</button>)}
+        {isG&&<button onClick={copiarMesAnterior} style={{padding:"5px 12px",borderRadius:20,border:"none",background:"rgba(255,255,255,.08)",color:"rgba(255,255,255,.5)",fontWeight:700,fontSize:10,fontFamily:"inherit",cursor:"pointer"}}>📋 Copiar mês</button>}
+      </div>
+    </div>
+
+    {/* Calendário mensal */}
+    {viewMode==="mensal"&&<div style={{margin:"10px 9px 0",background:Th.card,borderRadius:15,boxShadow:Th.sh}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 13px 3px"}}>
+        <button onClick={prevM} style={{background:"none",border:"none",cursor:"pointer",color:Th.body,padding:4,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <div style={{fontSize:13,fontWeight:700,color:Th.h1}}>{MONTHS[vm]} {vy}</div>
+        <button onClick={nextM} style={{background:"none",border:"none",cursor:"pointer",color:Th.body,padding:4,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"0 5px"}}>{WEEK.map(w=><div key={w} style={{textAlign:"center",fontSize:9,fontWeight:700,color:Th.muted,padding:"2px 0 4px"}}>{w}</div>)}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"0 5px 9px"}}>
+        {cells.map((c,i)=>{
+          const isO=c.oth,isTod=!isO&&isCM&&c.day===today.getDate(),isSel=!isO&&c.day===sel&&isCM;
+          const hasSh=!isO&&!!(shifts[c.day]?.length),mySh=!isO&&!isG&&shifts[c.day]?.some(s=>s.plantonistas.includes(user.id));
+          const hasTr=!isO&&(trocas||[]).some(t=>(t.dayOrig===c.day||t.dayDest===c.day)&&t.status==="pendente");
+          return(<button key={i} onClick={()=>!isO&&sSel(c.day)} style={{width:30,height:30,margin:"1px auto",borderRadius:"50%",border:isTod&&!isSel?`2px solid ${Th.accent}`:"none",cursor:isO?"default":"pointer",background:isSel?Th.accent:mySh&&!isSel?`${user.color}18`:"transparent",color:isO?Th.muted:isSel?"#fff":Th.h1,fontSize:11,fontWeight:isSel||isTod||mySh?700:500,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",fontFamily:"'Nunito',sans-serif",transition:"background .15s"}}>
+            {c.day}
+            {!isSel&&(hasSh||hasTr)&&<div style={{position:"absolute",bottom:2,display:"flex",gap:2}}>
+              {hasSh&&<div style={{width:3,height:3,borderRadius:"50%",background:mySh?user.color:Th.green}}/>}
+              {hasTr&&<div style={{width:3,height:3,borderRadius:"50%",background:Th.purple}}/>}
+            </div>}
+          </button>);
+        })}
+      </div>
+    </div>}
+
+    {/* Visão semanal */}
+    {viewMode==="semanal"&&sel&&<div style={{margin:"10px 9px 0",background:Th.card,borderRadius:15,boxShadow:Th.sh,padding:"12px 10px"}}>
+      <div style={{fontSize:11,fontWeight:700,color:Th.h1,marginBottom:9}}>Semana atual</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+        {weekDays.map(day=>{const d=new Date(2026,4,day);const hasSh=!!(shifts[day]?.length);const mySh=shifts[day]?.some(s=>s.plantonistas.includes(user.id));const isToday=day===26&&isCM;return(
+          <div key={day} onClick={()=>sSel(day)} style={{cursor:"pointer",textAlign:"center",padding:"6px 2px",borderRadius:9,background:day===sel?Th.accent:isToday?Th.aBg:"transparent",border:isToday&&day!==sel?`1px solid ${Th.accent}`:"1px solid transparent",transition:"background .15s"}}>
+            <div style={{fontSize:8,fontWeight:700,color:day===sel?"#fff":Th.muted,marginBottom:2}}>{DS[d.getDay()].toUpperCase()}</div>
+            <div style={{fontSize:12,fontWeight:800,color:day===sel?"#fff":Th.h1}}>{day}</div>
+            {hasSh&&<div style={{display:"flex",justifyContent:"center",gap:2,marginTop:3}}>{shifts[day].map(s=><div key={s.id} style={{width:4,height:4,borderRadius:"50%",background:day===sel?"rgba(255,255,255,.7)":mySh&&s.plantonistas.includes(user.id)?user.color:s.tipo==="Diurno"?Th.green:Th.purple}}/>)}</div>}
+          </div>
+        );})}
+      </div>
+    </div>}
+
+    {sel&&<div style={{padding:"11px 9px 0"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{fontSize:12,fontWeight:700,color:Th.h1}}>{DNAMES[new Date(vy,vm,sel).getDay()]}, {sel}/{vm+1}</div>
+        <div style={{fontSize:9,color:Th.muted}}>2 médicos · 12h</div>
+      </div>
+      {["Diurno","Noturno"].map(tipo=>{
+        const color=tipo==="Diurno"?Th.green:Th.purple,bg=tipo==="Diurno"?Th.greenBg:Th.purpleBg,time=tipo==="Diurno"?"07:00–19:00":"19:00–07:00",icon=tipo==="Diurno"?"☀️":"🌙";
+        return(<div key={tipo}>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:7,marginTop:tipo==="Noturno"?10:0}}><div style={{height:1,flex:1,background:bg}}/><span style={{fontSize:9,fontWeight:700,color,background:bg,padding:"2px 8px",borderRadius:20}}>{icon} {tipo.toUpperCase()} · {time}</span><div style={{height:1,flex:1,background:bg}}/></div>
+          {ds.filter(s=>s.tipo===tipo).length===0&&isG&&<div style={{background:bg,borderRadius:10,padding:"9px",textAlign:"center",marginBottom:7,border:`1px dashed ${color}88`}}><button onClick={()=>{sForm(f=>({...f,tipo,time:tipo==="Diurno"?"07:00":"19:00",timeEnd:tipo==="Diurno"?"19:00":"07:00"}));sAdd(true);}} style={{background:color,border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Lançar {tipo}</button></div>}
+          {ds.filter(s=>s.tipo===tipo).map(s=>sCard(s))}
+        </div>);
+      })}
+    </div>}
+
+    {showAdd&&isG&&<Modal title={`Novo Plantão · ${form.tipo} · Dia ${sel}`} onClose={()=>sAdd(false)}>
+      <div style={{background:form.tipo==="Diurno"?Th.greenBg:Th.purpleBg,borderRadius:9,padding:"8px 12px",marginBottom:11,display:"flex",alignItems:"center",gap:7}}>
+        <span style={{fontSize:15}}>{form.tipo==="Diurno"?"☀️":"🌙"}</span>
+        <div style={{flex:1}}><div style={{fontSize:11,fontWeight:700,color:form.tipo==="Diurno"?Th.green:Th.purple}}>{form.tipo} · {form.time}–{form.timeEnd}</div></div>
+      </div>
+      <Sel label="1º Plantonista" value={form.p1} onChange={e=>sForm(f=>({...f,p1:e.target.value}))} options={[{v:"",l:"Selecionar…"},...ps.map(p=>({v:p.id,l:`${p.nome} · ${p.crm}`}))]}/>
+      <Sel label="2º Plantonista" value={form.p2} onChange={e=>sForm(f=>({...f,p2:e.target.value}))} options={[{v:"",l:"Selecionar…"},...ps.filter(p=>String(p.id)!==form.p1).map(p=>({v:p.id,l:`${p.nome} · ${p.crm}`}))]}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><Fld label="Início" value={form.time} onChange={e=>sForm(f=>({...f,time:e.target.value}))} type="time"/><Fld label="Fim" value={form.timeEnd} onChange={e=>sForm(f=>({...f,timeEnd:e.target.value}))} type="time"/></div>
+      <Sel label="Tipo" value={form.tipo} onChange={e=>sForm(f=>({...f,tipo:e.target.value}))} options={[{v:"Diurno",l:"☀️ Diurno 07–19h"},{v:"Noturno",l:"🌙 Noturno 19–07h"}]}/>
+      <Fld label="Observação (opcional)" value={form.obs} onChange={e=>sForm(f=>({...f,obs:e.target.value}))} placeholder="Ex: Reforço, plantão extra…"/>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11,cursor:"pointer"}} onClick={()=>sForm(f=>({...f,recorrente:!f.recorrente}))}>
+        <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${form.recorrente?Th.accent:Th.inpB}`,background:form.recorrente?Th.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>{form.recorrente&&<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}</div>
+        <div><div style={{fontSize:11,fontWeight:700,color:Th.h1}}>Plantão recorrente (semanal)</div><div style={{fontSize:9,color:Th.muted}}>Lança toda semana até o fim do mês</div></div>
+      </div>
+      {/* Preview dos valores para cada plantonista */}
+      {form.p1&&form.p2&&form.p1!==form.p2&&<div style={{background:Th.greenBg,borderRadius:10,padding:"10px 12px",marginBottom:11,border:`1px solid ${Th.green}33`}}>
+        <div style={{fontSize:10,fontWeight:700,color:Th.green,marginBottom:6}}>💰 Valor deste plantão</div>
+        {[form.p1,form.p2].map(id=>{const u=allU.find(x=>x.id===parseInt(id));if(!u)return null;const s=calcSalary(u.id,shifts);const n=s.count+1,v=calcVal(n);return<div key={id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:6}}><Av name={u.nome} size={18} ini={u.ini} color={u.color} foto={u.foto}/><span style={{fontSize:10,fontWeight:600,color:Th.h1}}>{u.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span></div><SBadge num={n}/></div>;})}
+      </div>}
+      <button onClick={addS} disabled={!form.p1||!form.p2||form.p1===form.p2} style={{width:"100%",padding:"12px",background:(!form.p1||!form.p2||form.p1===form.p2)?"#e2e8f0":Th.accent,border:"none",borderRadius:10,color:(!form.p1||!form.p2||form.p1===form.p2)?Th.muted:"#fff",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>Lançar Plantão na Escala</button>
+    </Modal>}
+    {det&&<DetModal s={det} sel={sel} user={user} isG={isG} geo={geo} check={check} shifts={shifts} users={users} onClose={()=>sDet(null)} regE={regE} regS={regS} fecharG={fecharG} delS={delS} addObs={addObs} confirmarP={confirmarP}/>}
+    {showExp&&<ExpModal shifts={shifts} vm={vm} vy={vy} onClose={()=>sExp(false)}/>}
+  </div>);}
+
+// ── DETAIL MODAL ───────────────────────────────────────────
+function DetModal({s,sel,user,isG,geo,check,shifts,users,onClose,regE,regS,fecharG,delS,addObs,confirmarP}){
+  const Th=G();const allU=users||USERS_DEFAULT;
+  const bc=s.status==="em_andamento"?Th.accent:s.status==="fechado_gestor"?Th.orange:s.tipo==="Diurno"?Th.green:Th.purple;
+  const ps=s.plantonistas.map(id=>allU.find(u=>u.id===id)).filter(Boolean);const mid=user.id,jaE=!!(s.entradas?.[mid]),jaS=!!(s.saidas?.[mid]);const fim=s.status==="concluido"||s.status==="fechado_gestor";
+  const[obsEdit,sObs]=useState(s.obs||"");const[editObs,sEditObs]=useState(false);
+  const salInfo=useMemo(()=>{const info={};s.plantonistas.forEach(uid=>{const{count}=calcSalary(uid,shifts);info[uid]={num:count+1,val:calcVal(count+1)};});return info;},[s,shifts]);
+  return(<Modal title="Plantão · Detalhes" onClose={onClose}>
+    <div style={{background:Th.bg,borderRadius:12,padding:"12px",marginBottom:13,border:`1px solid ${Th.border}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:13,fontWeight:700,color:bc}}>{s.tipo==="Diurno"?"☀️":"🌙"} {s.time}–{s.timeEnd}</span><Bdg tipo={s.tipo} status={s.status}/></div>
+      <div style={{fontSize:10,color:Th.body,marginBottom:9}}>{s.setor}</div>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{ps.map(p=>(
+        <div key={p.id} style={{background:p.id===mid?`${user.color}12`:"#fff",borderRadius:9,padding:"8px 10px",border:`1px solid ${p.id===mid?user.color+"44":Th.border}`,flex:"1 1 115px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><Av name={p.nome} size={24} ini={p.ini} color={p.color} foto={p.foto}/><div><div style={{fontSize:10,fontWeight:700,color:p.id===mid?user.color:Th.h1}}>{p.id===mid?"Você":p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</div><div style={{fontSize:8,color:Th.muted}}>{p.crm}</div></div></div>
+            {salInfo[p.id]&&<SBadge num={salInfo[p.id].num}/>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+            <div style={{background:s.entradas?.[p.id]?Th.greenBg:Th.bg,borderRadius:6,padding:"3px 6px"}}><div style={{fontSize:8,fontWeight:700,color:s.entradas?.[p.id]?Th.green:Th.muted}}>ENTRADA</div><div style={{fontSize:9,fontWeight:700,color:s.entradas?.[p.id]?Th.green:Th.muted}}>{s.entradas?.[p.id]||"—"}</div></div>
+            <div style={{background:s.saidas?.[p.id]?Th.bg:Th.orangeBg,borderRadius:6,padding:"3px 6px"}}><div style={{fontSize:8,fontWeight:700,color:s.saidas?.[p.id]?Th.muted:Th.orange}}>SAÍDA</div><div style={{fontSize:9,fontWeight:700,color:s.saidas?.[p.id]?Th.h1:Th.orange}}>{s.saidas?.[p.id]||"—"}</div></div>
+          </div>
+          {s.confirmados?.[p.id]&&<div style={{fontSize:8,color:Th.teal,marginTop:3,fontWeight:600}}>✉ Confirmou presença</div>}
+          {s.pago?.[p.id]&&<div style={{fontSize:8,color:Th.green,marginTop:2,fontWeight:700}}>💰 Pago</div>}
+        </div>
+      ))}</div>
+      {isG&&<div style={{marginTop:9}}>{editObs?<div style={{display:"flex",gap:7}}><textarea value={obsEdit} onChange={e=>sObs(e.target.value)} rows={2} style={{flex:1,padding:"7px 9px",borderRadius:8,border:`1.5px solid ${Th.inpB}`,outline:"none",fontSize:11,fontFamily:"'Nunito',sans-serif",color:Th.h1,background:Th.inp,resize:"none"}}/><button onClick={()=>{addObs(s.id,obsEdit);sEditObs(false);}} style={{background:Th.accent,border:"none",borderRadius:8,padding:"7px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",alignSelf:"flex-end"}}>✓</button></div>
+      :<div style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer"}} onClick={()=>sEditObs(true)}><span style={{fontSize:10,color:Th.body,fontStyle:s.obs?"normal":"italic"}}>{s.obs||"📝 Adicionar observação…"}</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={Th.muted} strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>}</div>}
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+      {!isG&&!fim&&!s.confirmados?.[mid]&&s.status==="agendado"&&<button onClick={()=>{confirmarP(s.id,mid);onClose();}} style={{padding:"10px",background:Th.tealBg,border:`1.5px solid ${Th.teal}`,borderRadius:10,color:Th.teal,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>✉ Confirmar minha presença</button>}
+      {!isG&&!fim&&<>
+        {!jaE&&<><div style={{background:Th.aBg,borderRadius:10,padding:"8px 11px",border:`1px solid ${Th.accent}33`,display:"flex",gap:7,marginBottom:3}}><span>📍</span><div><div style={{fontSize:11,fontWeight:700,color:Th.accent}}>Entrada exige localização</div><div style={{fontSize:10,color:"#3b82f6"}}>Precisa estar a menos de {RAIO}m do hospital.</div></div></div><GeoCard geo={geo} check={check} onConfirm={geo.status==="dentro"?()=>regE(s.id,mid):null} label="▶ Registrar minha entrada" color="linear-gradient(135deg,#2563ff,#1d4ed8)"/></>}
+        {jaE&&!jaS&&<><div style={{background:Th.greenBg,borderRadius:10,padding:"8px 11px",border:`1px solid ${Th.green}33`,display:"flex",gap:7,marginBottom:3}}><span>📍</span><div><div style={{fontSize:11,fontWeight:700,color:Th.green}}>Saída exige localização</div><div style={{fontSize:10,color:"#166534"}}>Precisa estar dentro de {RAIO}m.</div></div></div><GeoCard geo={geo} check={check} onConfirm={geo.status==="dentro"?()=>regS(s.id,mid):null} label="✓ Registrar minha saída" color={Th.green}/></>}
+        {jaE&&jaS&&<div style={{textAlign:"center",padding:"11px",background:Th.greenBg,borderRadius:12,color:Th.green,fontSize:13,fontWeight:700}}>✅ Registros concluídos!</div>}
+      </>}
+      {isG&&!fim&&<>
+        <div style={{background:Th.orangeBg,borderRadius:10,padding:"8px 11px",border:`1px solid ${Th.orange}44`,display:"flex",gap:7}}><span>🛡️</span><div style={{fontSize:10,color:"#92400e"}}><strong>Gestor · sem restrição de área.</strong></div></div>
+        {s.plantonistas.filter(id=>!s.entradas?.[id]).map(id=>{const p=allU.find(u=>u.id===id);return p?<button key={id} onClick={()=>regE(s.id,id)} style={{padding:"9px 12px",background:`linear-gradient(135deg,#2563ff,#1d4ed8)`,border:"none",borderRadius:9,color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:7}}><Av name={p.nome} size={20} ini={p.ini} color={p.color} foto={p.foto}/>▶ Entrada · {p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</button>:null;})}
+        {s.plantonistas.filter(id=>s.entradas?.[id]&&!s.saidas?.[id]).map(id=>{const p=allU.find(u=>u.id===id);return p?<button key={id} onClick={()=>regS(s.id,id)} style={{padding:"9px 12px",background:`linear-gradient(135deg,${Th.green},#15803d)`,border:"none",borderRadius:9,color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:7}}><Av name={p.nome} size={20} ini={p.ini} color={p.color} foto={p.foto}/>✓ Saída · {p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</button>:null;})}
+        <button onClick={()=>fecharG(s.id)} style={{padding:"10px",background:`linear-gradient(135deg,${Th.orange},#b45309)`,border:"none",borderRadius:9,color:"#fff",fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>⚠ Fechar plantão completo</button>
+      </>}
+      {fim&&<div style={{textAlign:"center",padding:"11px",background:Th.bg,borderRadius:11,color:Th.body,fontSize:12,fontWeight:600,border:`1px solid ${Th.border}`}}>Plantão encerrado{s.status==="fechado_gestor"?" · pelo gestor":""}</div>}
+      {isG&&<button onClick={()=>delS(s.id)} style={{padding:"9px",background:Th.redBg,border:`1px solid ${Th.red}22`,borderRadius:9,color:Th.red,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>🗑 Remover plantão</button>}
+    </div>
+  </Modal>);}
+
+// ── EXPORT MODAL ───────────────────────────────────────────
+function ExpModal({shifts,vm,vy,onClose}){
+  const Th=G();const[fmt,sFmt]=useState("whatsapp");const[cp,sCp]=useState(false);
+  const build=()=>{
+    const h=fmt==="whatsapp"?`📋 *ESCALA PEDIATRIA UPA JP*\n*${MONTHS[vm].toUpperCase()} / ${vy}*\n🏥 Dr. Rodrigo Cahuana · CRM 11707/PB\n${"─".repeat(28)}\n`:`ESCALA PEDIATRIA UPA JP — ${MONTHS[vm].toUpperCase()} ${vy}\n${"=".repeat(36)}\n`;
+    const days=Object.keys(shifts).map(Number).sort((a,b)=>a-b);let body="";
+    for(const day of days){const ss=shifts[day];if(!ss?.length)continue;const d=new Date(vy,vm,day);body+=fmt==="whatsapp"?`\n*${String(day).padStart(2,"0")}/${String(vm+1).padStart(2,"0")} (${DS[d.getDay()]})*\n`:`\n${String(day).padStart(2,"0")}/${String(vm+1).padStart(2,"0")} (${DS[d.getDay()]})\n`;
+      for(const s of ss){const n=s.plantonistas.map(id=>USERS_DEFAULT.find(u=>u.id===id)).filter(Boolean).map(p=>p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")).join(" + ");body+=`  ${s.tipo==="Diurno"?"☀️":"🌙"} ${s.time}–${s.timeEnd}  ${s.status==="concluido"?"✓":s.status==="em_andamento"?"●":"○"} ${n}\n`;}}
+    return h+body+`\n${"─".repeat(28)}\n_Plantão+ v6.0 · ${new Date().toLocaleDateString("pt-BR")}_`;
+  };
+  const t=build();
+  return(<Modal title="Exportar Escala" onClose={onClose}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>{["whatsapp","texto"].map(f=>(<button key={f} onClick={()=>sFmt(f)} style={{padding:"9px",borderRadius:10,border:`2px solid ${fmt===f?Th.accent:Th.border}`,background:fmt===f?Th.aBg:Th.bg,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:11,color:fmt===f?Th.accent:Th.body,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}><span style={{fontSize:14}}>{f==="whatsapp"?"💬":"📄"}</span>{f==="whatsapp"?"WhatsApp":"Texto"}</button>))}</div>
+    <div style={{background:Th.bg,borderRadius:10,padding:"10px 11px",maxHeight:170,overflowY:"auto",marginBottom:12,border:`1px solid ${Th.border}`}}><pre style={{fontSize:10,color:Th.h1,fontFamily:"monospace",whiteSpace:"pre-wrap",wordBreak:"break-word",margin:0,lineHeight:1.6}}>{t}</pre></div>
+    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+      <button onClick={()=>window.open(`https://wa.me/?text=${encodeURIComponent(t)}`,"_blank")} style={{padding:"12px",background:"#25D366",border:"none",borderRadius:11,color:"#fff",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>💬 Enviar pelo WhatsApp</button>
+      <button onClick={()=>{if(navigator.share)navigator.share({title:"Escala",text:t});else{navigator.clipboard.writeText(t);sCp(true);setTimeout(()=>sCp(false),2500);}}} style={{padding:"11px",background:Th.tealBg,border:`1.5px solid ${Th.teal}`,borderRadius:11,color:Th.teal,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>📤 Compartilhar</button>
+      <button onClick={()=>{navigator.clipboard.writeText(t);sCp(true);setTimeout(()=>sCp(false),2500);}} style={{padding:"11px",background:cp?Th.greenBg:Th.bg,border:`1.5px solid ${cp?Th.green:Th.border}`,borderRadius:11,color:cp?Th.green:Th.body,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",transition:"all .2s"}}>{cp?"✓ Copiado!":"📋 Copiar"}</button>
+    </div>
+  </Modal>);}
+// ── FINANCEIRO ────────────────────────────────────────────
+function Financeiro({user,shifts,setShifts,users}){
+  const Th=G();const isG=user.role==="gestor";const allU=users||USERS_DEFAULT;
+  const ps=useMemo(()=>allU.filter(u=>u.role==="plantonista"&&u.ativo!==false),[allU]);
+  const statsAll=useMemo(()=>ps.map(u=>{
+    const{items,total,count}=calcSalary(u.id,shifts);
+    const pago=items.filter(s=>s.pago?.[u.id]).reduce((a,s)=>a+s.valor,0);
+    return{...u,items,total,count,pago,pendente:total-pago};
+  }).filter(u=>u.count>0).sort((a,b)=>b.count-a.count),[shifts,ps]);
+  const mySal=useMemo(()=>calcSalary(user.id,shifts),[shifts,user.id]);
+  const totalGeral=statsAll.reduce((a,u)=>a+u.total,0);
+  const totalPago=statsAll.reduce((a,u)=>a+u.pago,0);
+  const[showPagto,sShowPagto]=useState(null);
+  const togglePago=(sId,uid)=>setShifts(p=>{const u=JSON.parse(JSON.stringify(p));Object.values(u).flat().forEach(s=>{if(s.id===sId){if(!s.pago)s.pago={};s.pago[uid]=!s.pago[uid];}});return u;});
+  const[tab,sTab]=useState("resumo");
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    <div style={{padding:"46px 16px 20px",background:Th.gradH,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:"radial-gradient(circle,rgba(180,83,9,.2) 0%,transparent 70%)",top:-80,right:-60,pointerEvents:"none"}}/>
+      <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>Plantão+ · Financeiro</div>
+      <div style={{fontSize:19,fontWeight:900,color:"#fff"}}>{isG?"Controle Financeiro":"Meus Rendimentos"}</div>
+      <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:1}}>1–6 plantões: R$825 · 7+: R$1.185</div>
+    </div>
+    <div style={{padding:"14px 12px"}}>
+      {/* Regra visual */}
+      <div style={{background:Th.card,borderRadius:13,padding:"13px 15px",marginBottom:13,boxShadow:Th.sh}}>
+        <div style={{fontSize:11,fontWeight:700,color:Th.h1,marginBottom:10}}>📋 Tabela de valores</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:isG?0:10}}>
+          <div style={{background:Th.greenBg,borderRadius:10,padding:"11px 13px",border:`1px solid ${Th.green}33`}}>
+            <div style={{fontSize:9,fontWeight:700,color:Th.green,textTransform:"uppercase",marginBottom:5}}>Plantões 1 a 6</div>
+            <div style={{fontSize:24,fontWeight:900,color:Th.green}}>R$ 825</div>
+            <div style={{fontSize:9,color:Th.green,marginTop:2}}>por plantão</div>
+          </div>
+          <div style={{background:Th.goldBg,borderRadius:10,padding:"11px 13px",border:"1px solid #fcd34d"}}>
+            <div style={{fontSize:9,fontWeight:700,color:Th.gold,textTransform:"uppercase",marginBottom:5}}>Plantões 7+</div>
+            <div style={{fontSize:24,fontWeight:900,color:Th.gold}}>R$ 1.185</div>
+            <div style={{fontSize:9,color:Th.orange,marginTop:2}}>por plantão</div>
+          </div>
+        </div>
+        {!isG&&<div style={{marginTop:10,background:Th.aBg,borderRadius:9,padding:"9px 12px",border:`1px solid ${Th.accent}33`}}>
+          <div style={{fontSize:11,fontWeight:700,color:Th.accent}}>Próximo plantão #{mySal.nextNum} → {fmtR(mySal.next)}</div>
+          <div style={{fontSize:10,color:Th.body,marginTop:2}}>{mySal.count} plantões realizados · Total acumulado: <strong>{fmtR(mySal.total)}</strong></div>
+        </div>}
+      </div>
+
+      {isG&&<>
+        {/* Card total gestor */}
+        <div style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8)",borderRadius:14,padding:"16px 18px",marginBottom:13,boxShadow:"0 8px 32px rgba(37,99,255,.3)",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,.06)",right:-20,top:-20}}/>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginBottom:3}}>Total geral · todos os médicos</div>
+          <div style={{fontSize:28,fontWeight:900,color:"#fff",letterSpacing:"-1px",marginBottom:8}}>{fmtR(totalGeral)}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+            <div style={{background:"rgba(255,255,255,.12)",borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>Pago</div><div style={{fontSize:14,fontWeight:800,color:"#86efac"}}>{fmtR(totalPago)}</div></div>
+            <div style={{background:"rgba(255,255,255,.12)",borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>Pendente</div><div style={{fontSize:14,fontWeight:800,color:"#fcd34d"}}>{fmtR(totalGeral-totalPago)}</div></div>
+          </div>
+        </div>
+        {/* Tabs */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
+          {[{v:"resumo",l:"📊 Ranking"},{v:"detalhe",l:"💳 Por plantão"}].map(t=><button key={t.v} onClick={()=>sTab(t.v)} style={{padding:"8px",borderRadius:10,border:`2px solid ${tab===t.v?Th.accent:Th.border}`,background:tab===t.v?Th.aBg:Th.bg,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:11,color:tab===t.v?Th.accent:Th.body}}>{t.l}</button>)}
+        </div>
+        {/* Gráfico barras simples */}
+        {tab==="resumo"&&<>
+          <div style={{fontSize:12,fontWeight:700,color:Th.h1,marginBottom:10}}>Rendimentos por plantonista</div>
+          {statsAll.map((u,idx)=>{const pct=totalGeral>0?Math.round(u.total/totalGeral*100):0;return(
+            <div key={u.id} style={{background:Th.card,borderRadius:13,padding:"12px 14px",marginBottom:8,boxShadow:Th.sh}}>
+              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:9}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:idx===0?Th.goldBg:idx===1?"#f1f5f9":Th.bg,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:11,color:idx===0?Th.gold:Th.muted,flexShrink:0}}>{idx+1}</div>
+                <Av name={u.nome} size={36} ini={u.ini} color={u.color} foto={u.foto}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:11,fontWeight:700,color:Th.h1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.nome.replace(/Dr\. |Dra\. /,"")}</div>
+                  <div style={{fontSize:9,color:Th.muted}}>{u.count} plantões · {u.count*12}h</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:14,fontWeight:900,color:Th.green}}>{fmtR(u.total)}</div>
+                  <div style={{fontSize:9,color:u.pendente>0?Th.orange:Th.green,fontWeight:600}}>{u.pendente>0?`${fmtR(u.pendente)} pend.`:"✓ pago"}</div>
+                </div>
+              </div>
+              {/* Barra de progresso */}
+              <div style={{height:4,background:Th.border,borderRadius:20,overflow:"hidden",marginBottom:8}}>
+                <div style={{height:"100%",background:`linear-gradient(90deg,${u.color},${u.color}88)`,borderRadius:20,transition:"width .8s ease",width:`${pct}%`}}/>
+              </div>
+              <button onClick={()=>sShowPagto(u)} style={{width:"100%",padding:"7px",background:u.pendente>0?Th.orangeBg:Th.greenBg,border:`1px solid ${u.pendente>0?"#fcd34d":Th.green+"33"}`,borderRadius:8,color:u.pendente>0?Th.orange:Th.green,fontSize:10,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>
+                {u.pendente>0?`⚠ Pendente: ${fmtR(u.pendente)}`:"✓ Totalmente pago"}
+              </button>
+            </div>
+          );})}
+        </>}
+        {tab==="detalhe"&&<>
+          <div style={{fontSize:12,fontWeight:700,color:Th.h1,marginBottom:10}}>Plantões por médico</div>
+          {statsAll.map(u=>(
+            <div key={u.id} style={{background:Th.card,borderRadius:12,padding:"11px 13px",marginBottom:9,boxShadow:Th.sh}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><Av name={u.nome} size={30} ini={u.ini} color={u.color} foto={u.foto}/><div><div style={{fontSize:11,fontWeight:700,color:Th.h1}}>{u.nome.replace(/Dr\. |Dra\. /,"")}</div><div style={{fontSize:9,color:Th.muted}}>{fmtR(u.total)} total</div></div></div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{u.items.map(s=>(
+                <div key={s.id} onClick={()=>togglePago(s.id,u.id)} style={{display:"flex",alignItems:"center",gap:4,background:s.pago?.[u.id]?Th.greenBg:Th.bg,borderRadius:8,padding:"4px 8px",border:`1px solid ${s.pago?.[u.id]?Th.green+"44":Th.border}`,cursor:"pointer"}}>
+                  <span style={{fontSize:9,color:s.pago?.[u.id]?Th.green:Th.muted,fontWeight:700}}>#{s.num}</span>
+                  <span style={{fontSize:9,color:s.pago?.[u.id]?Th.green:s.valor===SALARY_BASE?Th.body:Th.gold,fontWeight:700}}>{fmtR(s.valor)}</span>
+                  {s.pago?.[u.id]&&<span style={{fontSize:8,color:Th.green}}>✓</span>}
+                </div>
+              ))}</div>
+            </div>
+          ))}
+        </>}
+      </>}
+
+      {/* Visão plantonista */}
+      {!isG&&<>
+        <div style={{fontSize:12,fontWeight:700,color:Th.h1,marginBottom:10}}>📋 Meu histórico</div>
+        {mySal.items.length===0&&<div style={{textAlign:"center",padding:"24px",color:Th.muted,fontSize:12}}><div style={{fontSize:24,marginBottom:6}}>📭</div>Nenhum plantão concluído</div>}
+        {mySal.items.map(s=>{const d=new Date(2026,4,s.day);return(
+          <div key={s.id} style={{background:Th.card,borderRadius:12,padding:"11px 13px",marginBottom:7,boxShadow:Th.sh,display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:38,height:38,borderRadius:10,background:s.tipo==="Diurno"?Th.greenBg:Th.purpleBg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <div style={{fontSize:11,fontWeight:900,color:s.tipo==="Diurno"?Th.green:Th.purple}}>{s.day}</div>
+              <div style={{fontSize:7,fontWeight:700,color:s.tipo==="Diurno"?Th.green:Th.purple}}>{DS[d.getDay()].toUpperCase()}</div>
+            </div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:700,color:Th.h1}}>{s.tipo==="Diurno"?"☀️":"🌙"} {s.time}–{s.timeEnd}</div><div style={{fontSize:9,color:Th.muted}}>Plantão #{s.num}</div></div>
+            <div style={{textAlign:"right"}}><SBadge num={s.num}/>{s.pago?.[user.id]&&<div style={{fontSize:9,color:Th.green,fontWeight:700,marginTop:3}}>💰 Pago</div>}</div>
+          </div>
+        );})}
+        {mySal.count>0&&<div style={{background:Th.card,borderRadius:12,padding:"13px 15px",marginTop:4,boxShadow:Th.sh,border:`1px solid ${Th.accent}22`,display:"flex",alignItems:"center",justifyContent:"space-between"}}><div><div style={{fontSize:11,fontWeight:700,color:Th.h1}}>Total acumulado</div><div style={{fontSize:9,color:Th.muted}}>{mySal.count} plantões · {mySal.count*12}h</div></div><div style={{fontSize:22,fontWeight:900,color:Th.green}}>{fmtR(mySal.total)}</div></div>}
+      </>}
+    </div>
+
+    {showPagto&&isG&&<Modal title={`Pagamentos · ${showPagto.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}`} onClose={()=>sShowPagto(null)}>
+      <div style={{background:Th.bg,borderRadius:11,padding:"12px",marginBottom:12}}>
+        {showPagto.items.map(s=>(
+          <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${Th.border}`}}>
+            <div><div style={{fontSize:11,fontWeight:700,color:Th.h1}}>Plantão #{s.num} · {String(s.day).padStart(2,"0")}/05</div><div style={{fontSize:9,color:Th.muted}}>{s.tipo} · {s.time}–{s.timeEnd}</div></div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,fontWeight:800,color:s.valor===SALARY_BASE?Th.green:Th.gold}}>{fmtR(s.valor)}</span>
+              <button onClick={()=>togglePago(s.id,showPagto.id)} style={{padding:"4px 9px",background:s.pago?.[showPagto.id]?Th.greenBg:Th.orangeBg,border:"none",borderRadius:7,color:s.pago?.[showPagto.id]?Th.green:Th.orange,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{s.pago?.[showPagto.id]?"✓ Pago":"Pagar"}</button>
+            </div>
+          </div>
+        ))}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:`2px solid ${Th.border}`}}>
+          <div style={{fontSize:12,fontWeight:700,color:Th.h1}}>Total</div>
+          <div style={{fontSize:16,fontWeight:900,color:Th.green}}>{fmtR(showPagto.total)}</div>
+        </div>
+      </div>
+      <button onClick={()=>{showPagto.items.forEach(s=>{if(!s.pago?.[showPagto.id])togglePago(s.id,showPagto.id);});sShowPagto(null);}} style={{width:"100%",padding:"12px",background:`linear-gradient(135deg,${Th.green},#15803d)`,border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",marginBottom:8,boxShadow:`0 3px 12px ${Th.green}44`}}>✓ Marcar todos como pagos</button>
+    </Modal>}
+  </div>);}
+
+// ── TROCAS ────────────────────────────────────────────────
+function Trocas({user,shifts,setShifts,trocas,setTrocas,ok,users}){
+  const Th=G();const allU=users||USERS_DEFAULT;const[tab,sTab]=useState("pendentes");const[nova,sNova]=useState(false);const isG=user.role==="gestor";
+  const mine=isG?trocas:trocas.filter(t=>t.dono===user.id||t.receptor===user.id);
+  const pend=mine.filter(t=>t.status==="pendente"),hist=mine.filter(t=>t.status!=="pendente");const list=tab==="pendentes"?pend:hist;
+  const getS=id=>Object.values(shifts).flat().find(s=>s.id===id);
+  const aceitar=async(t)=>{
+    const nv=JSON.parse(JSON.stringify(shifts));
+    if(t.tipo==="repasse"){const s=nv[t.dayOrig]?.find(x=>x.id===t.shiftId);if(s)s.plantonistas=s.plantonistas.map(id=>id===t.dono?t.receptor:id);}
+    else{const sO=nv[t.dayOrig]?.find(x=>x.id===t.shiftId),sD=nv[t.dayDest]?.find(x=>x.id===t.shiftDest);if(sO&&sD){const tmp=t.dono;nv[t.dayOrig]=nv[t.dayOrig].map(s=>s.id===t.shiftId?{...s,plantonistas:s.plantonistas.map(id=>id===t.dono?t.receptor:id)}:s);nv[t.dayDest]=nv[t.dayDest].map(s=>s.id===t.shiftDest?{...s,plantonistas:s.plantonistas.map(id=>id===t.receptor?tmp:id)}:s);}}
+    await setShifts(nv);await setTrocas(prev=>prev.map(x=>x.id===t.id?{...x,status:"aceita",resolvidaEm:nowFull()}:x));
+  };
+  const recusar=async(id)=>setTrocas(prev=>prev.map(t=>t.id===id?{...t,status:"recusada",resolvidaEm:nowFull()}:t));
+  const getU2=id=>allU.find(u=>u.id===id);
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    <div style={{padding:"44px 14px 14px",background:Th.gradH}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <div><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}><span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase"}}>Plantão+</span><SyncDot ok={ok}/></div><div style={{fontSize:16,fontWeight:900,color:"#fff"}}>Trocas e Repasses</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginTop:1}}>{pend.length} pendente(s) · tempo real</div></div>
+        <button onClick={()=>sNova(true)} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:10,padding:"7px 11px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>+Nova</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>{[{v:"pendentes",l:`⏳ Pendentes (${pend.length})`},{v:"historico",l:`📂 Histórico (${hist.length})`}].map(t=><button key={t.v} onClick={()=>sTab(t.v)} style={{padding:"7px",borderRadius:9,border:"none",background:tab===t.v?"rgba(255,255,255,.22)":"rgba(255,255,255,.07)",color:tab===t.v?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:10,fontFamily:"inherit",cursor:"pointer"}}>{t.l}</button>)}</div>
+    </div>
+    <div style={{padding:"11px 10px"}}>
+      {list.length===0&&<div style={{textAlign:"center",padding:"32px 20px",color:Th.muted}}><div style={{fontSize:32,marginBottom:10}}>{tab==="pendentes"?"🎉":"📭"}</div><div style={{fontWeight:700,color:Th.body,fontSize:13}}>{tab==="pendentes"?"Escala sem pendências!":"Histórico vazio"}</div></div>}
+      {list.map(t=>{
+        const dono=getU2(t.dono),rec=getU2(t.receptor),sO=getS(t.shiftId),sD=t.shiftDest?getS(t.shiftDest):null;
+        const isPend=t.status==="pendente",canAct=isG&&isPend,isMyTr=!isG&&isPend&&t.receptor===user.id;
+        const bc=t.tipo==="troca"?Th.purple:Th.teal;
+        return(<div key={t.id} style={{background:Th.card,borderRadius:14,marginBottom:11,boxShadow:Th.sh,overflow:"hidden",border:isPend?`1.5px solid ${bc}`:`1px solid ${Th.border}`}}>
+          <div style={{background:t.tipo==="troca"?Th.purpleBg:Th.tealBg,padding:"7px 13px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12}}>{t.tipo==="troca"?"🔄":"➡️"}</span><span style={{fontSize:11,fontWeight:800,color:bc}}>{t.tipo==="troca"?"Troca":"Repasse"}</span></div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              {isPend&&<span style={{fontSize:9,fontWeight:700,color:"#92400e",background:Th.orangeBg,padding:"2px 7px",borderRadius:20}}>⏳</span>}
+              {t.status==="aceita"&&<span style={{fontSize:9,fontWeight:700,color:Th.green,background:Th.greenBg,padding:"2px 7px",borderRadius:20}}>✓ Aceita</span>}
+              {t.status==="recusada"&&<span style={{fontSize:9,fontWeight:700,color:Th.red,background:Th.redBg,padding:"2px 7px",borderRadius:20}}>✗ Recusada</span>}
+              <span style={{fontSize:9,color:Th.muted}}>{t.criadaEm}</span>
+            </div>
+          </div>
+          <div style={{padding:"12px 13px"}}>
+            {isMyTr&&<div style={{background:Th.aBg,borderRadius:9,padding:"8px 11px",marginBottom:9,border:`1px solid ${Th.accent}33`,display:"flex",gap:7}}><span style={{fontSize:13}}>🔔</span><div><div style={{fontSize:11,fontWeight:700,color:Th.accent}}>{dono?.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")} quer trocar</div><div style={{fontSize:10,color:"#3b82f6"}}>Aguarda aprovação</div></div></div>}
+            <div style={{display:"grid",gridTemplateColumns:t.tipo==="troca"?"1fr auto 1fr":"1fr",gap:7,marginBottom:8}}>
+              <div style={{background:Th.bg,borderRadius:9,padding:"8px 10px"}}>
+                <div style={{fontSize:8,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:3}}>De</div>
+                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><Av name={dono?.nome||"?"} size={18} ini={dono?.ini} color={dono?.color} foto={dono?.foto}/><span style={{fontSize:10,fontWeight:700,color:Th.h1}}>{dono?.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span></div>
+                <div style={{fontSize:10,fontWeight:700,color:Th.h1}}>{String(t.dayOrig).padStart(2,"0")}/05 · {sO?.time}–{sO?.timeEnd}</div>
+              </div>
+              {t.tipo==="troca"&&<><div style={{display:"flex",alignItems:"center"}}><div style={{width:22,height:22,borderRadius:"50%",background:Th.purpleBg,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={Th.purple} strokeWidth="2"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg></div></div>
+              <div style={{background:Th.bg,borderRadius:9,padding:"8px 10px"}}>
+                <div style={{fontSize:8,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:3}}>Com</div>
+                <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><Av name={rec?.nome||"?"} size={18} ini={rec?.ini} color={rec?.color} foto={rec?.foto}/><span style={{fontSize:10,fontWeight:700,color:Th.h1}}>{rec?.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span></div>
+                <div style={{fontSize:10,fontWeight:700,color:Th.h1}}>{String(t.dayDest||0).padStart(2,"0")}/05 · {sD?.time}–{sD?.timeEnd}</div>
+              </div></>}
+              {t.tipo==="repasse"&&<div style={{background:Th.greenBg,borderRadius:9,padding:"8px 10px",display:"flex",alignItems:"center",gap:7}}><span>➡️</span><div><div style={{fontSize:8,fontWeight:700,color:Th.green,textTransform:"uppercase",marginBottom:3}}>Assume</div><div style={{display:"flex",alignItems:"center",gap:4}}><Av name={rec?.nome||"?"} size={18} ini={rec?.ini} color={rec?.color} foto={rec?.foto}/><span style={{fontSize:10,fontWeight:700,color:Th.green}}>{rec?.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span></div></div></div>}
+            </div>
+            {t.motivo&&<div style={{background:Th.bg,borderRadius:7,padding:"5px 9px",marginBottom:8,border:`1px solid ${Th.border}`}}><span style={{fontSize:9,fontWeight:700,color:Th.muted}}>Motivo: </span><span style={{fontSize:9,color:Th.body,fontStyle:"italic"}}>"{t.motivo}"</span></div>}
+            {canAct&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+              <button onClick={()=>aceitar(t)} style={{padding:"10px",background:`linear-gradient(135deg,${Th.green},#15803d)`,border:"none",borderRadius:10,color:"#fff",fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>✓ Aceitar</button>
+              <button onClick={()=>recusar(t.id)} style={{padding:"10px",background:Th.redBg,border:`1px solid ${Th.red}22`,borderRadius:10,color:Th.red,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>✗ Recusar</button>
+            </div>}
+            {!isG&&isPend&&t.dono===user.id&&<div style={{fontSize:10,color:Th.muted,textAlign:"center",padding:"6px",background:Th.bg,borderRadius:7}}>⏳ Aguardando gestor</div>}
+            {t.resolvidaEm&&<div style={{fontSize:9,color:Th.muted,textAlign:"right",marginTop:4}}>{t.status==="aceita"?"✓ Aceita":"✗ Recusada"} · {t.resolvidaEm}</div>}
+          </div>
+        </div>);
+      })}
+    </div>
+    {nova&&<NovaTroca user={user} shifts={shifts} setTrocas={setTrocas} users={users} onClose={()=>sNova(false)}/>}
+  </div>);}
+
+function NovaTroca({user,shifts,setTrocas,users,onClose}){
+  const Th=G();const allU=users||USERS_DEFAULT;const[tipo,sTipo]=useState("troca");const[dono,sDono]=useState(String(user.role==="plantonista"?user.id:""));const[rec,sRec]=useState("");const[shO,sSO]=useState("");const[shD,sSD]=useState("");const[motivo,sMot]=useState("");
+  const isG=user.role==="gestor";const ps=allU.filter(u=>u.role==="plantonista"&&u.ativo!==false);
+  const all=Object.entries(shifts).flatMap(([day,ss])=>ss.map(s=>({...s,day:parseInt(day)})));
+  const sOf=id=>all.filter(s=>s.plantonistas.includes(parseInt(id))&&s.status==="agendado");
+  const fS=s=>{const d=new Date(2026,4,s.day);return`${String(s.day).padStart(2,"0")}/05 (${DS[d.getDay()]}) · ${s.time}–${s.timeEnd}`;};
+  const gD=id=>all.find(s=>s.id===parseInt(id))?.day;const ok2=dono&&rec&&shO&&(tipo==="repasse"||shD);
+  const sub=async()=>{if(!ok2)return;await setTrocas(prev=>[{id:Date.now(),tipo,shiftId:parseInt(shO),dayOrig:gD(shO),shiftDest:tipo==="troca"?parseInt(shD):null,dayDest:tipo==="troca"?gD(shD):null,dono:parseInt(dono),receptor:parseInt(rec),motivo,status:"pendente",criadaEm:nowFull()},...prev]);onClose();};
+  return(<Modal title="Nova Troca / Repasse" sub="Visível para todos em tempo real" onClose={onClose}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>{[{v:"troca",l:"🔄 Troca",d:"Swap entre dois"},{v:"repasse",l:"➡️ Repasse",d:"Um passa ao outro"}].map(f=><button key={f.v} onClick={()=>sTipo(f.v)} style={{padding:"9px 7px",borderRadius:11,border:`2px solid ${tipo===f.v?Th.accent:Th.border}`,background:tipo===f.v?Th.aBg:Th.bg,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:11,color:tipo===f.v?Th.accent:Th.body,textAlign:"center"}}><div style={{fontSize:14,marginBottom:2}}>{f.v==="troca"?"🔄":"➡️"}</div><div>{f.l}</div><div style={{fontSize:9,fontWeight:500,color:tipo===f.v?"#3b82f6":Th.muted,marginTop:1}}>{f.d}</div></button>)}</div>
+    {isG&&<Sel label="Quem solicita" value={dono} onChange={e=>sDono(e.target.value)} options={[{v:"",l:"Selecionar…"},...ps.map(p=>({v:p.id,l:p.nome}))]}/>}
+    {!isG&&<div style={{background:`${user.color}12`,borderRadius:11,padding:"9px 12px",marginBottom:11,display:"flex",alignItems:"center",gap:9,border:`1px solid ${user.color}33`}}><Av name={user.nome} size={26} ini={user.ini} color={user.color} foto={user.foto}/><div><div style={{fontSize:11,fontWeight:700,color:user.color}}>{user.nome}</div><div style={{fontSize:9,color:Th.muted}}>Solicitante</div></div></div>}
+    {dono&&<Sel label="Turno a ceder" value={shO} onChange={e=>sSO(e.target.value)} options={[{v:"",l:"Selecionar turno…"},...sOf(dono).map(s=>({v:s.id,l:fS(s)}))]}/>}
+    <Sel label={tipo==="troca"?"Quem recebe (e cede o dele)":"Quem assume"} value={rec} onChange={e=>sRec(e.target.value)} options={[{v:"",l:"Selecionar…"},...ps.filter(p=>String(p.id)!==String(dono)).map(p=>({v:p.id,l:p.nome}))]}/>
+    {tipo==="troca"&&rec&&<Sel label="Turno do receptor" value={shD} onChange={e=>sSD(e.target.value)} options={[{v:"",l:"Selecionar turno…"},...sOf(rec).map(s=>({v:s.id,l:fS(s)}))]}/>}
+    <Fld label="Motivo (opcional)" value={motivo} onChange={e=>sMot(e.target.value)} placeholder="Ex: Compromisso, consulta…"/>
+    <div style={{background:Th.greenBg,borderRadius:9,padding:"8px 11px",marginBottom:12,border:`1px solid ${Th.green}33`,display:"flex",gap:6}}><span>🔄</span><div style={{fontSize:10,color:"#166534",lineHeight:1.5}}><strong>Tempo real:</strong> {isG?"Escala atualizada para todos.":"Gestor recebe notificação automaticamente."}</div></div>
+    <button onClick={sub} disabled={!ok2} style={{width:"100%",padding:"12px",background:ok2?Th.accent:"#e2e8f0",border:"none",borderRadius:10,color:ok2?"#fff":Th.muted,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:ok2?"pointer":"not-allowed",opacity:ok2?1:.6}}>{tipo==="troca"?"🔄 Enviar Troca":"➡️ Enviar Repasse"}</button>
+  </Modal>);}
+// ── MENSAGENS ─────────────────────────────────────────────
+function Mensagens({user,msgs,setMsgs,users}){
+  const Th=G();const allU=users||USERS_DEFAULT;const isG=user.role==="gestor";
+  const ps=allU.filter(u=>u.role==="plantonista"&&u.ativo!==false);
+  const[dest,sDest]=useState(isG?"todos":"0");const[texto,sTexto]=useState("");const[filt,sFilt]=useState("todos");const[urgente,sUrgente]=useState(false);
+  const filtered=useMemo(()=>{
+    if(!msgs)return[];
+    return msgs.filter(m=>{
+      if(isG){if(filt==="todos")return true;return String(m.para)===filt||String(m.de)===filt;}
+      return m.para===user.id||m.para==="todos"||m.de===user.id;
+    }).sort((a,b)=>b.id-a.id);
+  },[msgs,isG,user.id,filt]);
+  const enviar=async()=>{
+    if(!texto.trim())return;const para=isG?(dest==="todos"?"todos":parseInt(dest)):0;
+    await setMsgs(prev=>[{id:Date.now(),de:user.id,para,texto:texto.trim(),hora:nowFull(),urgente},...(prev||[])].slice(0,300));sTexto("");sUrgente(false);
+  };
+  const getU2=id=>allU.find(u=>u.id===id);
+  return(<div style={{flex:1,display:"flex",flexDirection:"column",background:Th.bg,fontFamily:"'Nunito',sans-serif"}}>
+    <div style={{padding:"44px 14px 13px",background:Th.gradH}}>
+      <div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase"}}>Plantão+</div>
+      <div style={{fontSize:16,fontWeight:900,color:"#fff",marginTop:1}}>💬 Mensagens</div>
+      <div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginTop:1}}>Chat interno da equipe</div>
+      {isG&&<div style={{marginTop:10,overflowX:"auto",display:"flex",gap:6,paddingBottom:2}}>
+        {["todos",...ps.map(p=>String(p.id))].map(d=>{const u=d==="todos"?null:getU2(parseInt(d));return(
+          <button key={d} onClick={()=>sFilt(d)} style={{flexShrink:0,padding:"5px 10px",borderRadius:20,border:"none",background:filt===d?"rgba(255,255,255,.25)":"rgba(255,255,255,.08)",color:filt===d?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:10,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+            {u&&<Av name={u.nome} size={14} ini={u.ini} color={u.color} foto={u.foto}/>}
+            {u?u.nome.replace(/Dr\. |Dra\. /,"").split(" ")[0]:"📢 Todos"}
+          </button>
+        );})}
+      </div>}
+    </div>
+    <div style={{flex:1,overflowY:"auto",padding:"11px 12px",paddingBottom:120}}>
+      {(!msgs||filtered.length===0)&&<div style={{textAlign:"center",padding:"32px 20px",color:Th.muted,fontSize:12}}><div style={{fontSize:28,marginBottom:8}}>💬</div><div style={{fontWeight:700,color:Th.body}}>Sem mensagens</div><div style={{fontSize:11,marginTop:4}}>Comece uma conversa!</div></div>}
+      {filtered.map(m=>{
+        const isMine=m.de===user.id;const autor=getU2(m.de);
+        return(<div key={m.id} style={{display:"flex",flexDirection:"column",alignItems:isMine?"flex-end":"flex-start",marginBottom:10}}>
+          {!isMine&&<div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><Av name={autor?.nome||"?"} size={18} ini={autor?.ini} color={autor?.color} foto={autor?.foto}/><span style={{fontSize:10,fontWeight:700,color:Th.body}}>{autor?.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</span>{m.urgente&&<span style={{fontSize:9,fontWeight:700,color:"#dc2626",background:"#fee2e2",padding:"1px 6px",borderRadius:20}}>🚨 Urgente</span>}</div>}
+          <div style={{maxWidth:"82%",background:isMine?`${user.color}18`:m.urgente?"#fef2f2":Th.card,borderRadius:isMine?"16px 16px 4px 16px":"16px 16px 16px 4px",padding:"9px 12px",border:`1px solid ${isMine?user.color+"33":m.urgente?"#fecaca":Th.border}`,boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
+            {m.para==="todos"&&!isMine&&<div style={{fontSize:8,fontWeight:700,color:Th.teal,marginBottom:3}}>📢 Para todos</div>}
+            {isG&&m.para!=="todos"&&!isMine&&<div style={{fontSize:8,fontWeight:700,color:Th.purple,marginBottom:3}}>→ {getU2(m.para)?.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")||"?"}</div>}
+            <div style={{fontSize:12,color:isMine?user.color:Th.h1,lineHeight:1.5}}>{m.texto}</div>
+            <div style={{fontSize:9,color:Th.muted,marginTop:4,textAlign:isMine?"right":"left"}}>{m.hora}</div>
+          </div>
+        </div>);
+      })}
+    </div>
+    <div style={{position:"fixed",bottom:60,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,padding:"10px 12px",background:Th.nav,borderTop:`1px solid ${Th.navBorder}`,zIndex:40}}>
+      {isG&&<select value={dest} onChange={e=>sDest(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:9,border:`1px solid ${Th.inpB}`,outline:"none",fontSize:11,fontFamily:"'Nunito',sans-serif",color:Th.h1,background:Th.inp,marginBottom:7,appearance:"none"}}>
+        <option value="todos">📢 Para todos</option>
+        {ps.map(p=><option key={p.id} value={p.id}>{p.nome.replace(/Dr\. |Dra\. /,"").split(" ").slice(0,2).join(" ")}</option>)}
+      </select>}
+      <div style={{display:"flex",gap:7,alignItems:"center"}}>
+        {isG&&<button onClick={()=>sUrgente(!urgente)} style={{width:36,height:36,borderRadius:"50%",background:urgente?"#fef2f2":"transparent",border:`1.5px solid ${urgente?"#fca5a5":Th.inpB}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}><span style={{fontSize:14}}>🚨</span></button>}
+        <input value={texto} onChange={e=>sTexto(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&enviar()} placeholder={isG?"Mensagem para equipe…":"Responder ao gestor…"} style={{flex:1,padding:"10px 12px",borderRadius:11,border:`1.5px solid ${urgente?"#fca5a5":Th.inpB}`,outline:"none",fontSize:13,fontFamily:"'Nunito',sans-serif",color:Th.h1,background:urgente?"#fef2f2":Th.inp}}/>
+        <button onClick={enviar} disabled={!texto.trim()} style={{width:40,height:40,borderRadius:"50%",background:texto.trim()?Th.accent:"#e2e8f0",border:"none",cursor:texto.trim()?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .2s"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={texto.trim()?"#fff":Th.muted} strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>);}
+
+// ── EQUIPE ────────────────────────────────────────────────
+function Equipe({user,shifts,users,setUsers}){
+  const Th=G();const[search,sS]=useState("");const[cred,sCred]=useState(null);const[editU,sEditU]=useState(null);const[showAdd,sShowAdd]=useState(false);const isG=user.role==="gestor";
+  const allU=users||USERS_DEFAULT;const ps=allU.filter(u=>u.role==="plantonista");
+  const filt=ps.filter(p=>p.nome.toLowerCase().includes(search.toLowerCase())||p.crm.toLowerCase().includes(search.toLowerCase()));
+  const stats4=uid=>{const{count,total}=calcSalary(uid,shifts);const prox=Object.values(shifts).flat().filter(s=>s.plantonistas.includes(uid)&&s.status==="agendado").length;return{count,total,prox};};
+  const toggleAtivo=(uid)=>{if(!setUsers)return;setUsers(prev=>prev.map(u=>u.id===uid?{...u,ativo:!u.ativo}:u));};
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    <div style={{padding:"44px 14px 14px",background:Th.gradH}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:700,textTransform:"uppercase"}}>Plantão+</div><div style={{fontSize:16,fontWeight:900,color:"#fff",marginTop:1}}>Equipe Médica</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)",marginTop:1}}>Pediatria UPA JP · {ps.filter(u=>u.ativo!==false).length} ativos</div></div>
+        {isG&&<button onClick={()=>sShowAdd(true)} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 11px",cursor:"pointer",color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Novo</button>}
+      </div>
+      <div style={{background:"rgba(255,255,255,.1)",borderRadius:10,display:"flex",alignItems:"center",gap:7,padding:"8px 11px"}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input value={search} onChange={e=>sS(e.target.value)} placeholder="Buscar nome ou CRM…" style={{background:"transparent",border:"none",outline:"none",color:"#fff",fontSize:12,fontFamily:"inherit",width:"100%"}}/>
+        {search&&<button onClick={()=>sS("")} style={{background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,.5)",fontSize:14,padding:0}}>✕</button>}
+      </div>
+    </div>
+    <div style={{padding:"11px 10px"}}>
+      {/* Gestor card */}
+      <div style={{background:Th.card,borderRadius:12,padding:"12px 13px",marginBottom:9,boxShadow:"0 3px 14px rgba(37,99,255,.1)",border:"1.5px solid rgba(37,99,255,.18)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <div style={{width:42,height:42,borderRadius:"50%",background:"linear-gradient(135deg,#2563ff,#1d4ed8)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,color:"#fff",fontSize:15,flexShrink:0,boxShadow:"0 3px 12px rgba(37,99,255,.4)"}}>RC</div>
+          <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:Th.h1}}>Dr. Rodrigo Cahuana Chipayo</div><div style={{fontSize:9,color:Th.muted}}>CRM 11707/PB · Gestor · rodrigoyjuliana@gmail.com</div></div>
+          <div style={{background:Th.aBg,borderRadius:20,padding:"2px 8px"}}><span style={{fontSize:9,fontWeight:700,color:Th.accent}}>GESTOR</span></div>
+        </div>
+      </div>
+      <div style={{fontSize:9,fontWeight:700,color:Th.muted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:7,paddingLeft:2}}>Plantonistas ({filt.length})</div>
+      {filt.map(p=>{const st=stats4(p.id);const inativo=p.ativo===false;return(
+        <div key={p.id} style={{background:Th.card,borderRadius:12,padding:"11px 13px",marginBottom:8,boxShadow:Th.sh,opacity:inativo?.5:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:9}}>
+            <Av name={p.nome} size={40} ini={p.ini} color={p.color} foto={p.foto}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:Th.h1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.nome}</div>
+              <div style={{fontSize:9,color:Th.muted}}>{p.crm} · {p.esp}</div>
+              <div style={{display:"flex",gap:5,marginTop:4,flexWrap:"wrap"}}>
+                {st.count>0&&<span style={{fontSize:9,color:Th.green,fontWeight:700,background:Th.greenBg,padding:"1px 7px",borderRadius:20}}>✓ {st.count} plt · {fmtR(st.total)}</span>}
+                {st.prox>0&&<span style={{fontSize:9,color:Th.accent,fontWeight:700,background:Th.aBg,padding:"1px 7px",borderRadius:20}}>📅 {st.prox} próx.</span>}
+                {st.count>=6&&<span style={{fontSize:9,color:Th.gold,fontWeight:700,background:Th.goldBg,padding:"1px 7px",borderRadius:20}}>★ Escalonado</span>}
+                {inativo&&<span style={{fontSize:9,color:Th.red,fontWeight:700,background:Th.redBg,padding:"1px 7px",borderRadius:20}}>Inativo</span>}
+              </div>
+            </div>
+            {isG&&<div style={{display:"flex",gap:5,flexShrink:0}}>
+              <button onClick={()=>sCred(p)} style={{background:Th.aBg,border:"none",borderRadius:7,padding:"5px 8px",cursor:"pointer",color:Th.accent,fontSize:9,fontWeight:700,fontFamily:"inherit"}}>🔑</button>
+              <button onClick={()=>sEditU(p)} style={{background:Th.greenBg,border:"none",borderRadius:7,padding:"5px 8px",cursor:"pointer",color:Th.green,fontSize:9,fontWeight:700,fontFamily:"inherit"}}>✏️</button>
+            </div>}
+          </div>
+        </div>
+      );})}
+    </div>
+
+    {/* Modal credenciais */}
+    {cred&&isG&&<Modal title="Credenciais" onClose={()=>sCred(null)}>
+      <div style={{background:Th.bg,borderRadius:11,padding:"13px",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:11}}><Av name={cred.nome} size={40} ini={cred.ini} color={cred.color} foto={cred.foto}/><div><div style={{fontSize:13,fontWeight:700,color:Th.h1}}>{cred.nome}</div><div style={{fontSize:10,color:Th.muted}}>{cred.crm}</div></div></div>
+        {[{l:"Login",v:cred.login,m:true},{l:"Senha",v:cred.senha,m:true},{l:"E-mail",v:cred.email}].map(i=>(<div key={i.l} style={{background:Th.card,borderRadius:8,padding:"8px 10px",marginBottom:6,border:`1px solid ${Th.border}`}}><div style={{fontSize:9,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:2}}>{i.l}</div><div style={{fontSize:12,fontWeight:700,color:Th.h1,fontFamily:i.m?"monospace":"inherit"}}>{i.v}</div></div>))}
+      </div>
+      <button onClick={()=>navigator.clipboard?.writeText(`Plantão+ v6\nLogin: ${cred.login}\nSenha: ${cred.senha}\nLink: ${window.location.href}`)} style={{width:"100%",padding:"10px",background:Th.aBg,border:`1.5px solid ${Th.accent}`,borderRadius:9,color:Th.accent,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",marginBottom:7}}>📋 Copiar credenciais</button>
+      <button onClick={()=>window.open(`https://wa.me/?text=${encodeURIComponent(`*Plantão+* · Acesso\n\nOlá, ${cred.nome.replace(/Dr\. |Dra\. /,"").split(" ")[0]}!\n\n*Login:* ${cred.login}\n*Senha:* ${cred.senha}\n\n${window.location.href}`)}`,"_blank")} style={{width:"100%",padding:"10px",background:"#25D366",border:"none",borderRadius:9,color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>💬 Enviar pelo WhatsApp</button>
+    </Modal>}
+
+    {/* Modal adicionar médico */}
+    {showAdd&&isG&&<AddMedicoModal users={allU} setUsers={setUsers} onClose={()=>sShowAdd(false)}/>}
+    {/* Modal editar médico */}
+    {editU&&isG&&<EditMedicoModal u={editU} setUsers={setUsers} onClose={()=>sEditU(null)} toggleAtivo={toggleAtivo}/>}
+  </div>);}
+
+function AddMedicoModal({users,setUsers,onClose}){
+  const Th=G();const[form,sF]=useState({nome:"",crm:"",email:"",login:"",senha:"",esp:"Pediatria",color:"#16a34a"});
+  const ok2=form.nome.trim()&&form.crm.trim()&&form.login.trim()&&form.senha.trim();
+  const add=async()=>{if(!ok2)return;const newU={...form,id:Date.now(),role:"plantonista",ini:(()=>{const p=form.nome.replace(/Dr\. |Dra\. /,"").split(" ");return(p[0]?.[0]||"")+(p[1]?.[0]||"");})(),foto:null,ativo:true};if(setUsers)await setUsers(prev=>[...prev,newU]);onClose();};
+  const colors=["#16a34a","#2563ff","#7c3aed","#d97706","#0891b2","#db2777","#059669","#dc2626","#ea580c","#9333ea"];
+  return(<Modal title="Adicionar Plantonista" onClose={onClose}>
+    <Fld label="Nome completo" value={form.nome} onChange={e=>sF(f=>({...f,nome:e.target.value}))} placeholder="Dr(a). Nome Sobrenome"/>
+    <Fld label="CRM" value={form.crm} onChange={e=>sF(f=>({...f,crm:e.target.value}))} placeholder="00000/PB"/>
+    <Fld label="E-mail" value={form.email} onChange={e=>sF(f=>({...f,email:e.target.value}))} type="email" placeholder="email@hospital.com"/>
+    <Fld label="Login" value={form.login} onChange={e=>sF(f=>({...f,login:e.target.value.toLowerCase()}))} placeholder="nome.sobrenome"/>
+    <Fld label="Senha inicial" value={form.senha} onChange={e=>sF(f=>({...f,senha:e.target.value}))} placeholder="Mínimo 6 caracteres"/>
+    <div style={{marginBottom:12}}>
+      <label style={{display:"block",fontSize:10,fontWeight:700,color:Th.body,marginBottom:6,textTransform:"uppercase",letterSpacing:".05em"}}>Cor do avatar</label>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{colors.map(c=><div key={c} onClick={()=>sF(f=>({...f,color:c}))} style={{width:26,height:26,borderRadius:"50%",background:c,cursor:"pointer",border:`3px solid ${form.color===c?"#fff":"transparent"}`,boxShadow:form.color===c?`0 0 0 2px ${c}`:""}}/>)}</div>
+    </div>
+    <button onClick={add} disabled={!ok2} style={{width:"100%",padding:"12px",background:ok2?Th.accent:"#e2e8f0",border:"none",borderRadius:10,color:ok2?"#fff":Th.muted,fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:ok2?"pointer":"not-allowed"}}>Adicionar à Equipe</button>
+  </Modal>);}
+
+function EditMedicoModal({u,setUsers,onClose,toggleAtivo}){
+  const Th=G();const[form,sF]=useState({...u});
+  const save=async()=>{if(setUsers)await setUsers(prev=>prev.map(x=>x.id===u.id?{...form}:x));onClose();};
+  return(<Modal title={`Editar · ${u.nome.replace(/Dr\. |Dra\. /,"").split(" ")[0]}`} onClose={onClose}>
+    <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:13,background:Th.bg,borderRadius:10,padding:"10px 12px"}}>
+      <Av name={form.nome} size={40} ini={form.ini} color={form.color} foto={form.foto}/><div><div style={{fontSize:12,fontWeight:700,color:Th.h1}}>{form.nome}</div><div style={{fontSize:9,color:Th.muted}}>{form.crm}</div></div>
+    </div>
+    <Fld label="Nome" value={form.nome} onChange={e=>sF(f=>({...f,nome:e.target.value}))}/>
+    <Fld label="CRM" value={form.crm} onChange={e=>sF(f=>({...f,crm:e.target.value}))}/>
+    <Fld label="E-mail" value={form.email} onChange={e=>sF(f=>({...f,email:e.target.value}))} type="email"/>
+    <Fld label="Nova senha" value={form.senha} onChange={e=>sF(f=>({...f,senha:e.target.value}))} placeholder="Alterar senha…"/>
+    <Fld label="Especialidade" value={form.esp} onChange={e=>sF(f=>({...f,esp:e.target.value}))}/>
+    <button onClick={save} style={{width:"100%",padding:"12px",background:Th.accent,border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,fontFamily:"inherit",cursor:"pointer",marginBottom:8}}>✓ Salvar alterações</button>
+    <button onClick={()=>{toggleAtivo(u.id);onClose();}} style={{width:"100%",padding:"10px",background:u.ativo===false?Th.greenBg:Th.redBg,border:"none",borderRadius:9,color:u.ativo===false?Th.green:Th.red,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>{u.ativo===false?"✓ Reativar plantonista":"⊘ Desativar plantonista"}</button>
+  </Modal>);}
+
+// ── MAIS ──────────────────────────────────────────────────
+function Mais({user,onLogout,darkMode,setDarkMode,shifts,users}){
+  const Th=G();const isG=user.role==="gestor";
+  const sal=useMemo(()=>calcSalary(user.id,shifts),[shifts,user.id]);
+  return(<div style={{flex:1,overflowY:"auto",background:Th.bg,fontFamily:"'Nunito',sans-serif",paddingBottom:70}}>
+    <div style={{padding:"46px 16px 22px",background:Th.gradH,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:`radial-gradient(circle,${user.color}25 0%,transparent 70%)`,top:-60,right:-40,pointerEvents:"none"}}/>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:13,position:"relative"}}><Av name={user.nome} size={54} ini={user.ini} color={user.color} foto={user.foto}/><div><div style={{fontSize:15,fontWeight:900,color:"#fff",letterSpacing:"-.3px"}}>{user.nome}</div><div style={{fontSize:10,color:"rgba(255,255,255,.55)",marginTop:2}}>CRM {user.crm} · {user.esp}</div><div style={{fontSize:9,color:"rgba(255,255,255,.4)"}}>{user.email}</div></div></div>
+      <div style={{display:"flex",gap:7,flexWrap:"wrap",position:"relative"}}>
+        <div style={{display:"inline-flex",background:isG?"rgba(37,99,255,.3)":"rgba(22,163,74,.3)",borderRadius:20,padding:"4px 11px",alignItems:"center",gap:4}}><div style={{width:5,height:5,borderRadius:"50%",background:isG?"#93c5fd":"#86efac"}}/><span style={{fontSize:9,fontWeight:700,color:"#fff"}}>{isG?"GESTOR · ACESSO COMPLETO":"PLANTONISTA · v6.0"}</span></div>
+        <div style={{display:"inline-flex",background:"rgba(74,222,128,.18)",borderRadius:20,padding:"4px 11px",alignItems:"center",gap:4}}><div style={{width:5,height:5,borderRadius:"50%",background:"#4ade80",animation:"pulse2 1.5s infinite"}}/><span style={{fontSize:9,fontWeight:700,color:"#4ade80"}}>TEMPO REAL</span></div>
+      </div>
+    </div>
+    <div style={{padding:"12px 11px"}}>
+      {/* Dark mode */}
+      <div style={{background:Th.card,borderRadius:12,padding:"13px 15px",marginBottom:10,boxShadow:Th.sh,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>setDarkMode(!darkMode)}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>{darkMode?"☀️":"🌙"}</span><div><div style={{fontSize:13,fontWeight:700,color:Th.h1}}>{darkMode?"Modo Claro":"Modo Escuro"}</div><div style={{fontSize:10,color:Th.muted}}>Toque para alternar</div></div></div>
+        <div style={{width:44,height:24,borderRadius:12,background:darkMode?Th.accent:Th.border,position:"relative",transition:"background .3s"}}><div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:darkMode?23:3,transition:"left .3s",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/></div>
+      </div>
+      {/* Resumo financeiro */}
+      {!isG&&sal.count>0&&<div style={{background:Th.card,borderRadius:12,padding:"13px 15px",marginBottom:10,boxShadow:Th.sh}}>
+        <div style={{fontSize:10,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:9}}>Resumo financeiro</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div style={{background:Th.bg,borderRadius:9,padding:"9px 10px"}}><div style={{fontSize:9,color:Th.muted,marginBottom:3}}>Total ganho</div><div style={{fontSize:15,fontWeight:900,color:Th.green}}>{fmtR(sal.total)}</div></div>
+          <div style={{background:Th.bg,borderRadius:9,padding:"9px 10px"}}><div style={{fontSize:9,color:Th.muted,marginBottom:4}}>Próximo plantão</div><SBadge num={sal.nextNum}/></div>
+        </div>
+      </div>}
+      {/* Credenciais */}
+      <div style={{background:Th.card,borderRadius:12,padding:"13px 15px",marginBottom:10,boxShadow:Th.sh}}>
+        <div style={{fontSize:9,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:8}}>Suas credenciais</div>
+        {[{l:"Login",v:user.login},{l:"Senha",v:"••••••••"},{l:"E-mail",v:user.email}].map(i=>(<div key={i.l} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${Th.border}`}}><span style={{fontSize:11,color:Th.body,fontWeight:600}}>{i.l}</span><span style={{fontSize:11,fontWeight:700,color:Th.h1,fontFamily:"monospace"}}>{i.v}</span></div>))}
+      </div>
+      {/* Tabela */}
+      <div style={{background:Th.card,borderRadius:12,padding:"13px 15px",marginBottom:10,boxShadow:Th.sh}}>
+        <div style={{fontSize:9,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:8}}>Tabela de valores</div>
+        {[{n:"Plantões 1 a 6",v:SALARY_BASE,c:Th.green,bg:Th.greenBg},{n:"A partir do 7º",v:SALARY_PLUS,c:Th.gold,bg:Th.goldBg}].map(r=>(<div key={r.n} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",background:r.bg,borderRadius:8,marginBottom:6,border:`1px solid ${r.c}22`}}><span style={{fontSize:11,fontWeight:600,color:r.c}}>{r.n}</span><span style={{fontSize:14,fontWeight:900,color:r.c}}>{fmtR(r.v)}</span></div>))}
+      </div>
+      {/* Status */}
+      <div style={{background:Th.card,borderRadius:12,padding:"13px 15px",marginBottom:10,boxShadow:Th.sh}}>
+        <div style={{fontSize:9,fontWeight:700,color:Th.muted,textTransform:"uppercase",marginBottom:8}}>Sistema</div>
+        <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}><div style={{width:32,height:32,borderRadius:"50%",background:Th.greenBg,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:9,height:9,borderRadius:"50%",background:Th.green,animation:"pulse2 1.5s infinite"}}/></div><div><div style={{fontSize:11,fontWeight:700,color:Th.green}}>Plantão+ v6.0 · Ativo</div><div style={{fontSize:9,color:Th.muted}}>Sincronização a cada 3s</div></div></div>
+        <div style={{fontSize:10,color:Th.body}}>Hospital: {HOSP.nome} · Raio: {RAIO}m</div>
+      </div>
+      {[{items:[{i:"🔒",l:"Alterar Senha"},{i:"🔔",l:"Notificações"}]},...(isG?[{items:[{i:"🏥",l:"Configurar Hospital"},{i:"📍",l:"Cerca Virtual"},{i:"📋",l:"Relatórios"},{i:"🔑",l:"Gerenciar usuários"}]}]:[]),{items:[{i:"🚪",l:"Sair da conta",red:true,action:onLogout}]}].map((g,gi)=>(
+        <div key={gi} style={{background:Th.card,borderRadius:12,overflow:"hidden",boxShadow:Th.sh,marginBottom:9}}>
+          {g.items.map((item,ii)=>(<button key={item.l} onClick={item.action} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",borderBottom:ii<g.items.length-1?`1px solid ${Th.border}`:"none",color:item.red?Th.red:Th.h1,fontSize:12,fontWeight:600,textAlign:"left"}} onMouseOver={e=>!item.red&&(e.currentTarget.style.background=Th.bg)} onMouseOut={e=>e.currentTarget.style.background="none"}><span style={{fontSize:15}}>{item.i}</span>{item.l}{!item.red&&<svg style={{marginLeft:"auto"}} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={Th.muted} strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>}</button>))}
+        </div>
+      ))}
+    </div>
+  </div>);}
+
+// ── BOTTOM NAV ────────────────────────────────────────────
+function Nav({active,setActive,user,pendT,pendMsg}){
+  const Th=G();const isG=user.role==="gestor";
+  const tabs=[
+    {id:"home",l:"Início",ic:c=><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>},
+    {id:"escala",l:"Escala",ic:c=><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>},
+    {id:"_add",l:""},
+    {id:"trocas",l:"Trocas",badge:pendT,ic:c=><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2"><path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>},
+    {id:isG?"financeiro":"msgs",l:isG?"Finanças":"Msgs",badge:isG?0:pendMsg,ic:c=>isG
+      ?<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      :<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>},
+  ];
+  return(<div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,height:60,background:Th.nav,borderTop:`1px solid ${Th.navBorder}`,display:"flex",alignItems:"center",boxShadow:"0 -4px 20px rgba(0,0,0,.1)",zIndex:50,fontFamily:"'Nunito',sans-serif"}}>
+    {tabs.map(tab=>{
+      if(tab.id==="_add")return(<div key="_add" style={{flex:1,display:"flex",justifyContent:"center",alignItems:"center"}}><button onClick={()=>setActive("escala")} style={{width:46,height:46,borderRadius:"50%",background:`linear-gradient(135deg,${Th.accent},${Th.aD})`,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 16px ${Th.accent}44,0 0 0 4px ${Th.bg}`,marginBottom:9}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button></div>);
+      const isAct=active===tab.id;
+      return(<button key={tab.id} onClick={()=>setActive(tab.id)} style={{flex:1,height:"100%",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,fontFamily:"inherit",position:"relative"}}>
+        <div style={{position:"relative",transition:"transform .15s",transform:isAct?"translateY(-1px)":"none"}}>
+          {tab.ic&&tab.ic(isAct?Th.accent:Th.muted)}
+          {(tab.badge||0)>0&&<div style={{position:"absolute",top:-3,right:-4,width:14,height:14,borderRadius:"50%",background:Th.red,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 1px 4px ${Th.red}44`}}><span style={{fontSize:8,fontWeight:900,color:"#fff"}}>{tab.badge}</span></div>}
+        </div>
+        {tab.l&&<span style={{fontSize:9,fontWeight:isAct?800:500,color:isAct?Th.accent:Th.muted}}>{tab.l}</span>}
+        {isAct&&<div style={{position:"absolute",bottom:0,width:20,height:3,borderRadius:"3px 3px 0 0",background:Th.accent}}/>}
+      </button>);
+    })}
+  </div>);}
+
+// ── APP ROOT ──────────────────────────────────────────────
+function App(){
+  const[state,setState]=useState("splash");const[user,setUser]=useState(null);const[tab,setTab]=useState("home");
+  const[darkMode,setDarkMode]=useState(false);
+  const[shifts,setShifts,shiftsOk]=useShared(SK.SH,SH_DEF);
+  const[trocas,setTrocas,trocasOk]=useShared(SK.TR,[]);
+  const[msgs,setMsgs,msgsOk]=useShared(SK.MSG,[]);
+  const[users,setUsers,usersOk]=useShared(SK.US,USERS_DEFAULT);
+  const[logEntries,setLog,logOk]=useShared(SK.LG,LOG_DEF);
+  const ok=shiftsOk&&trocasOk&&msgsOk&&usersOk;
+  const{ns,dm}=useNotifs(user?.id,trocas,msgs);
+  const pendT=(trocas||[]).filter(t=>t.status==="pendente").length;
+  const pendMsg=useMemo(()=>(!msgs||!user)?0:(msgs||[]).filter(m=>(m.para===user.id||m.para==="todos")&&m.de!==user.id).length,[msgs,user]);
+  const isG=user?.role==="gestor";
+  // Alert urgente
+  const[alertaAtivo,sAlertaAtivo]=useState(null);
+  useEffect(()=>{
+    if(!logEntries||!user)return;
+    const last=(logEntries||[]).filter(l=>l.tipo==="alerta").sort((a,b)=>b.id-b.id)[0];
+    if(last&&!alertaAtivo&&last.de!==user.id)sAlertaAtivo(last.msg);
+  },[logEntries]);
+  const addLog=useCallback(async(entry)=>{await setLog(prev=>[{...entry,id:Date.now()},...(prev||[])].slice(0,500));},[setLog]);
+  useEffect(()=>{_dk=darkMode;document.body.className=darkMode?"dark":"";document.body.style.background=darkMode?"#070d1a":"#0d2870";},[darkMode]);
+  const login=u=>{setUser(u);setState("main");setTab("home");};
+  const logout=()=>{setUser(null);setState("login");setTab("home");};
+  const shared={user,shifts,setShifts,trocas,setTrocas,ok,setTab,darkMode,setDarkMode,users,addLog};
+  const screens={
+    home:isG?<HomeGestor {...shared} msgs={msgs}/>:<HomePlant {...shared}/>,
+    escala:<Escala {...shared}/>,
+    trocas:<Trocas {...shared}/>,
+    financeiro:<Financeiro user={user||USERS_DEFAULT[0]} shifts={shifts} setShifts={setShifts} users={users}/>,
+    msgs:<Mensagens user={user||USERS_DEFAULT[1]} msgs={msgs} setMsgs={setMsgs} users={users}/>,
+    equipe:<Equipe user={user||USERS_DEFAULT[0]} shifts={shifts} users={users} setUsers={setUsers}/>,
+    mais:<Mais user={user||USERS_DEFAULT[1]} onLogout={logout} darkMode={darkMode} setDarkMode={setDarkMode} shifts={shifts} users={users}/>,
+  };
+  return(<div style={{display:"flex",flexDirection:"column",height:"100dvh",overflow:"hidden",background:G().bg,position:"relative",maxWidth:430,margin:"0 auto",transition:"background .3s"}}>
+    {state==="main"&&ns.length>0&&<NotifBanner n={ns[0]} dm={dm}/>}
+    {state==="main"&&alertaAtivo&&<AlertaBanner msg={alertaAtivo} onDismiss={()=>sAlertaAtivo(null)}/>}
+    {state==="main"&&user&&<>{screens[tab]||screens.home}<Nav active={tab} setActive={setTab} user={user} pendT={pendT} pendMsg={pendMsg}/></>}
+    {state==="login"&&<Login onLogin={login} users={users}/>}
+    {state==="splash"&&<Splash onDone={()=>setState("login")}/>}
+  </div>);}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script></body></html>
